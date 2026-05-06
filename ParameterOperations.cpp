@@ -15,7 +15,7 @@
 CKPluginInfo g_PluginInfo;
 #define PARAMOP_GUID CKGUID(0x4c8f620e, 0x64521f0a)
 
-char *ParamOpName = "Parameter Operations";
+const char *ParamOpName = "Parameter Operations";
 
 void CKInitializeOperationTypes(CKContext *context)
 {
