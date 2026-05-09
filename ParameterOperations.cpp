@@ -6,6 +6,8 @@
     #define CKGetPluginInfoCount			CKGet_ParamOp_PluginInfoCount
     #define CKGetPluginInfo					CKGet_ParamOp_PluginInfo
     #define g_PluginInfo					g_ParamOp_PluginInfo
+    #define CKInitializeOperationTypes      CKParamOpInitializeOperationTypes
+    #define CKInitializeOperationFunctions  CKParamOpInitializeOperationFunctions
 #else
     #define CKGetPluginInfoCount			CKGetPluginInfoCount
     #define CKGetPluginInfo					CKGetPluginInfo

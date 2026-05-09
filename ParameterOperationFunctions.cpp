@@ -2,6 +2,10 @@
 
 #include "ParameterOperationTypes.h"
 
+#ifdef CK_LIB
+    #define CKInitializeOperationFunctions CKParamOpInitializeOperationFunctions
+#endif
+
 //=============================================================================
 // Canonical Global Temporaries (as per mode instructions)
 //=============================================================================

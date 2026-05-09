@@ -54,6 +54,7 @@ endif ()
 # Project options
 # =============================================================================
 option(CKPARAMOP_BUILD_STATIC "Build static library" OFF)
+option(CKPARAMOP_BUILD_SHARED "Build shared library" ON)
 option(CKPARAMOP_INSTALL "Generate install target" ${CKPARAMOP_IS_TOP_LEVEL})
 
 # =============================================================================
@@ -179,13 +180,15 @@ endfunction()
 # =============================================================================
 # Targets
 # =============================================================================
-add_library(ParameterOperations SHARED ${CKPARAMOP_SOURCES} ParameterOperations.rc)
-ckparamop_configure_target(ParameterOperations)
-set_target_properties(ParameterOperations PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
-        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
-)
+if (CKPARAMOP_BUILD_SHARED)
+    add_library(ParameterOperations SHARED ${CKPARAMOP_SOURCES} ParameterOperations.rc)
+    ckparamop_configure_target(ParameterOperations)
+    set_target_properties(ParameterOperations PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+            LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+            ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+    )
+endif ()
 
 if (CKPARAMOP_BUILD_STATIC)
     add_library(ParameterOperationsStatic STATIC ${CKPARAMOP_SOURCES})
@@ -199,10 +202,12 @@ endif ()
 # Installation
 # =============================================================================
 if (CKPARAMOP_INSTALL)
-    install(TARGETS ParameterOperations
-            RUNTIME DESTINATION Managers
-            LIBRARY DESTINATION Managers
-    )
+    if (TARGET ParameterOperations)
+        install(TARGETS ParameterOperations
+                RUNTIME DESTINATION Managers
+                LIBRARY DESTINATION Managers
+        )
+    endif ()
 
     if (CKPARAMOP_BUILD_STATIC AND TARGET ParameterOperationsStatic)
         install(TARGETS ParameterOperationsStatic
