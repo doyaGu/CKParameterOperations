@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.16)
 project(CKParameterOperations
         VERSION 2.1.0.14
         DESCRIPTION "Virtools Parameter Operations Plugin"
-        LANGUAGES CXX
+        LANGUAGES C CXX
 )
 
 # =============================================================================
@@ -100,6 +100,28 @@ endif ()
 # =============================================================================
 # Virtools SDK
 # =============================================================================
+if (NOT TARGET VxMath AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../VxMath/CMakeLists.txt")
+    if (CKPARAMOP_BUILD_STATIC AND NOT CKPARAMOP_BUILD_SHARED)
+        set(VXMATH_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+        set(VXMATH_BUILD_STATIC ON CACHE BOOL "" FORCE)
+    endif ()
+    if (CKPARAMOP_INSTALL)
+        set(VXMATH_INSTALL ON CACHE BOOL "Generate install target" FORCE)
+    endif ()
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../VxMath" "${CMAKE_CURRENT_BINARY_DIR}/VxMath")
+endif ()
+
+if (NOT TARGET CK2 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../CK2/CMakeLists.txt")
+    if (CKPARAMOP_BUILD_STATIC AND NOT CKPARAMOP_BUILD_SHARED)
+        set(CK2_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+        set(CK2_BUILD_STATIC ON CACHE BOOL "" FORCE)
+    endif ()
+    if (CKPARAMOP_INSTALL)
+        set(CK2_INSTALL ON CACHE BOOL "Generate install target" FORCE)
+    endif ()
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../CK2" "${CMAKE_CURRENT_BINARY_DIR}/CK2")
+endif ()
+
 if (NOT TARGET VxMath OR NOT TARGET CK2)
     set(VIRTOOLS_SDK_PATH "" CACHE PATH "Path to the Virtools SDK")
     option(VIRTOOLS_SDK_FETCH_FROM_GIT "Fetch Virtools SDK from git if not found" OFF)
@@ -174,7 +196,18 @@ set(CKPARAMOP_SOURCES
 # =============================================================================
 function(ckparamop_configure_target TARGET_NAME)
     target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    target_link_libraries(${TARGET_NAME} PRIVATE CK2 VxMath dsound dxguid)
+    set(_ck2_dep CK2)
+    set(_vxmath_dep VxMath)
+    get_target_property(_target_type ${TARGET_NAME} TYPE)
+    if (_target_type STREQUAL "STATIC_LIBRARY")
+        if (TARGET CK2Static)
+            set(_ck2_dep CK2Static)
+        endif ()
+        if (TARGET VxMathStatic)
+            set(_vxmath_dep VxMathStatic)
+        endif ()
+    endif ()
+    target_link_libraries(${TARGET_NAME} PRIVATE ${_ck2_dep} ${_vxmath_dep} dsound dxguid)
 endfunction()
 
 # =============================================================================
