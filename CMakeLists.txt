@@ -237,14 +237,14 @@ endif ()
 if (CKPARAMOP_INSTALL)
     if (TARGET ParameterOperations)
         install(TARGETS ParameterOperations
-                RUNTIME DESTINATION Managers
-                LIBRARY DESTINATION Managers
+                RUNTIME DESTINATION Managers COMPONENT Runtime
+                LIBRARY DESTINATION Managers COMPONENT Runtime
         )
     endif ()
 
     if (CKPARAMOP_BUILD_STATIC AND TARGET ParameterOperationsStatic)
         install(TARGETS ParameterOperationsStatic
-                ARCHIVE DESTINATION lib
+                ARCHIVE DESTINATION lib COMPONENT Development
         )
     endif ()
 endif ()
