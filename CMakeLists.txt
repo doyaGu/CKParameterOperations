@@ -214,7 +214,12 @@ endfunction()
 # Targets
 # =============================================================================
 if (CKPARAMOP_BUILD_SHARED)
-    add_library(ParameterOperations SHARED ${CKPARAMOP_SOURCES} ParameterOperations.rc)
+    set(_ckparamop_version_resource ParameterOperations.rc)
+    if (COMMAND ballance_configure_version_resource AND DEFINED BALLANCE_MODULE_VERSION_OVERRIDE)
+        ballance_configure_version_resource(_ckparamop_version_resource ParameterOperations "Parameter Operations Manager" "ParameterOperations.dll")
+    endif ()
+
+    add_library(ParameterOperations SHARED ${CKPARAMOP_SOURCES} ${_ckparamop_version_resource})
     ckparamop_configure_target(ParameterOperations)
     set_target_properties(ParameterOperations PROPERTIES
             RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
