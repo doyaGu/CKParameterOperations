@@ -213,10 +213,32 @@ endfunction()
 # =============================================================================
 # Targets
 # =============================================================================
+function(ckparamop_configure_version_resource OUT_VAR)
+    if (NOT CKPARAMOP_VERSION_OVERRIDE MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$")
+        message(FATAL_ERROR "CKPARAMOP_VERSION_OVERRIDE must be a numeric four-part version")
+    endif ()
+
+    string(REPLACE "." ";" _ckparamop_version_parts "${CKPARAMOP_VERSION_OVERRIDE}")
+    list(GET _ckparamop_version_parts 0 CKPARAMOP_RC_VERSION_MAJOR)
+    list(GET _ckparamop_version_parts 1 CKPARAMOP_RC_VERSION_MINOR)
+    list(GET _ckparamop_version_parts 2 CKPARAMOP_RC_VERSION_PATCH)
+    list(GET _ckparamop_version_parts 3 CKPARAMOP_RC_VERSION_TWEAK)
+    set(CKPARAMOP_RC_VERSION_STRING "${CKPARAMOP_VERSION_OVERRIDE}")
+    set(_ckparamop_version_resource "${CMAKE_CURRENT_BINARY_DIR}/ParameterOperationsVersion.generated.rc")
+
+    configure_file(
+            "${CMAKE_CURRENT_SOURCE_DIR}/Version.rc.in"
+            "${_ckparamop_version_resource}"
+            @ONLY
+    )
+
+    set(${OUT_VAR} "${_ckparamop_version_resource}" PARENT_SCOPE)
+endfunction()
+
 if (CKPARAMOP_BUILD_SHARED)
     set(_ckparamop_version_resource ParameterOperations.rc)
-    if (COMMAND ballance_configure_version_resource AND DEFINED BALLANCE_MODULE_VERSION_OVERRIDE)
-        ballance_configure_version_resource(_ckparamop_version_resource ParameterOperations "Parameter Operations Manager" "ParameterOperations.dll")
+    if (DEFINED CKPARAMOP_VERSION_OVERRIDE)
+        ckparamop_configure_version_resource(_ckparamop_version_resource)
     endif ()
 
     add_library(ParameterOperations SHARED ${CKPARAMOP_SOURCES} ${_ckparamop_version_resource})
