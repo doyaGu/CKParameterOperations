@@ -33,10 +33,6 @@ if (CKPARAMOP_IS_TOP_LEVEL AND CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
     message(FATAL_ERROR "In-source builds not allowed. Run CMake from a separate directory: cmake -B build")
 endif ()
 
-if (NOT WIN32)
-    message(FATAL_ERROR "CKParameterOperations only supports Windows.")
-endif ()
-
 # =============================================================================
 # C++ standard
 # =============================================================================
@@ -207,7 +203,10 @@ function(ckparamop_configure_target TARGET_NAME)
             set(_vxmath_dep VxMathStatic)
         endif ()
     endif ()
-    target_link_libraries(${TARGET_NAME} PRIVATE ${_ck2_dep} ${_vxmath_dep} dsound dxguid)
+    target_link_libraries(${TARGET_NAME} PRIVATE ${_ck2_dep} ${_vxmath_dep})
+    if (WIN32)
+        target_link_libraries(${TARGET_NAME} PRIVATE dsound dxguid)
+    endif ()
 endfunction()
 
 # =============================================================================
@@ -236,12 +235,16 @@ function(ckparamop_configure_version_resource OUT_VAR)
 endfunction()
 
 if (CKPARAMOP_BUILD_SHARED)
-    set(_ckparamop_version_resource ParameterOperations.rc)
-    if (DEFINED CKPARAMOP_VERSION_OVERRIDE)
-        ckparamop_configure_version_resource(_ckparamop_version_resource)
+    set(_ckparamop_shared_sources ${CKPARAMOP_SOURCES})
+    if (WIN32)
+        set(_ckparamop_version_resource ParameterOperations.rc)
+        if (DEFINED CKPARAMOP_VERSION_OVERRIDE)
+            ckparamop_configure_version_resource(_ckparamop_version_resource)
+        endif ()
+        list(APPEND _ckparamop_shared_sources ${_ckparamop_version_resource})
     endif ()
 
-    add_library(ParameterOperations SHARED ${CKPARAMOP_SOURCES} ${_ckparamop_version_resource})
+    add_library(ParameterOperations SHARED ${_ckparamop_shared_sources})
     ckparamop_configure_target(ParameterOperations)
     set_target_properties(ParameterOperations PROPERTIES
             RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"

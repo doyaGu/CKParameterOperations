@@ -18,10 +18,9 @@ Extends the Virtools engine with 180+ operation types and 422+ operation functio
 
 ### Prerequisites
 
-- Windows OS
-- Visual Studio (MSVC)
+- Desktop C++ toolchain (MSVC, GCC, or Clang)
 - Virtools SDK 2.1
-- CMake 3.12+
+- CMake 3.16+
 
 ### Build Steps
 
@@ -35,6 +34,9 @@ cmake -B build -DVIRTOOLS_SDK_FETCH_FROM_GIT=ON
 # Build
 cmake --build build --config Release
 ```
+
+In the SDL3-only Ballanced superproject this manager is built and staged on
+Windows, Linux, and macOS as a required runtime manager.
 
 ## Project Structure
 
