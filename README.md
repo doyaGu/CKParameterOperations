@@ -1,66 +1,76 @@
 # Parameter Operations
 
-A Virtools plugin manager providing comprehensive parameter operation functions for the Virtools.
-
-## Overview
-
-Extends the Virtools engine with 180+ operation types and 422+ operation functions for data manipulation, mathematical operations, type conversions, and object queries.
+Parameter Operations is the Virtools manager module that registers the parameter-operation types and functions required by Ballanced compositions.
 
 ## Features
 
-- **180+ Operation Types**: Mathematical, logical, and object manipulation operations
-- **422+ Operation Functions**: Categorized by data type (Float, Int, Bool, Vector, String, Matrix, Color, Quaternion, Object, Sound, Mesh, Animation, Camera, Curve)
-- **Type Conversions**: Seamless conversion between Float, Int, Bool, Vector, String, Matrix, Color, and more
-- **Object Queries**: Access to entity properties, mesh data, materials, animations, sounds, and scene objects
-- **Collision Detection**: Built-in collision testing for boxes, entities, and vectors
+- More than 180 operation types and 422 operation functions
+- Mathematical, logical, conversion, and object-query operations
+- Float, integer, boolean, vector, string, matrix, color, quaternion, object, sound, mesh, animation, camera, and curve support
+- Entity, mesh, material, scene, and collision queries
+
+## Support scope
+
+The instructions in this document describe Parameter Operations' `sdl` branch. That branch is built and staged by [Ballanced](https://github.com/doyaGu/Ballanced) on Windows, Linux, and macOS. It can be built as a shared manager module or linked statically into the Ballanced Player.
+
+Output names are platform-native rather than always being a Windows DLL.
 
 ## Building
 
-### Prerequisites
-
-- Desktop C++ toolchain (MSVC, GCC, or Clang)
-- Virtools SDK 2.1
-- CMake 3.16+
-
-### Build Steps
+### Recommended: Ballanced superproject
 
 ```bash
-# Set Virtools SDK path
-cmake -B build -DVIRTOOLS_SDK_PATH="path/to/virtools/sdk"
+git clone --recurse-submodules https://github.com/doyaGu/Ballanced.git
+cd Ballanced
+cmake --preset linux-x64-runtime # choose the preset for your host
+cmake --build --preset linux-x64-runtime-stage-release
+```
 
-# Or fetch SDK automatically
-cmake -B build -DVIRTOOLS_SDK_FETCH_FROM_GIT=ON
+The shared module is staged under `build/<preset>/stage/Managers/`.
 
-# Build
+### Standalone
+
+Requirements:
+
+- CMake 3.16+
+- A desktop C++ toolchain
+- CK2 and VxMath, automatically detected from a Ballanced sibling checkout
+- A Virtools SDK supplied through `VIRTOOLS_SDK_PATH`, or fetched with `VIRTOOLS_SDK_FETCH_FROM_GIT=ON`, when sibling projects are unavailable
+
+```bash
+cmake -S . -B build -DVIRTOOLS_SDK_FETCH_FROM_GIT=ON
 cmake --build build --config Release
 ```
 
-In the SDL3-only Ballanced superproject this manager is built and staged on
-Windows, Linux, and macOS as a required runtime manager.
+CMake options:
 
-## Project Structure
+- `CKPARAMOP_BUILD_SHARED`: build a shared manager module; default `ON`
+- `CKPARAMOP_BUILD_STATIC`: build a static library; default `OFF`
+- `CKPARAMOP_INSTALL`: generate install rules
 
-```
-ParameterOperations/
-├── ParameterOperations.cpp          # Plugin initialization
-├── ParameterOperationFunctions.cpp  # Operation implementations
-├── ParameterOperationTypes.h        # Operation type GUIDs
-├── ParameterTypes.h                 # Parameter type GUIDs
-├── CMakeLists.txt                   # Build configuration
-├── docs/FunctionCategories.md       # Detailed function documentation
-└── scripts/                         # Export and generation utilities
-```
+## Project structure
 
-## Plugin Information
+- `ParameterOperations.cpp`: module registration
+- `ParameterOperationFunctions.cpp`: operation implementations
+- `ParameterOperationTypes.h`: operation type GUIDs
+- `ParameterTypes.h`: parameter type GUIDs
+- `docs/FunctionCategories.md`: generated function catalog
+- `scripts/`: export and generation utilities
 
-- **Name**: Parameter Operations
-- **Type**: Manager DLL
-- **GUID**: `0x4c8f620e, 0x64521f0a`
+## Plugin information
+
+- Name: Parameter Operations
+- Type: manager module
+- GUID: `0x4c8f620e, 0x64521f0a`
 
 ## Documentation
 
-See [`docs/FunctionCategories.md`](docs/FunctionCategories.md) for a complete list of all operation functions.
+See [docs/FunctionCategories.md](docs/FunctionCategories.md) for the complete operation catalog.
+
+## Versioning
+
+Parameter Operations is versioned independently. Ballanced releases pin an exact manager commit.
 
 ## License
 
-See [`LICENSE`](LICENSE) file for details.
+See [LICENSE](LICENSE).
