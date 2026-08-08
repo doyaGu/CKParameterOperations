@@ -37,10 +37,10 @@ endif ()
 # C++ standard
 # =============================================================================
 if (NOT CMAKE_CXX_STANDARD)
-    set(CMAKE_CXX_STANDARD 98)
+    set(CMAKE_CXX_STANDARD 17)
 endif ()
 if (NOT DEFINED CMAKE_CXX_STANDARD_REQUIRED)
-    set(CMAKE_CXX_STANDARD_REQUIRED NO)
+    set(CMAKE_CXX_STANDARD_REQUIRED YES)
 endif ()
 if (NOT DEFINED CMAKE_CXX_EXTENSIONS)
     set(CMAKE_CXX_EXTENSIONS YES)
@@ -141,7 +141,7 @@ if (NOT TARGET VxMath OR NOT TARGET CK2)
             FetchContent_Declare(
                     virtools_sdk
                     GIT_REPOSITORY https://github.com/doyaGu/Virtools-SDK-2.1.git
-                    GIT_TAG main
+                    GIT_TAG 175bcb12d829c687359b90615be53524cdba0132
             )
             message(STATUS "[CKParameterOperations] Downloading Virtools SDK")
             FetchContent_MakeAvailable(virtools_sdk)
@@ -191,6 +191,7 @@ set(CKPARAMOP_SOURCES
 # Helper function
 # =============================================================================
 function(ckparamop_configure_target TARGET_NAME)
+    target_compile_features(${TARGET_NAME} PRIVATE cxx_std_17)
     target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     set(_ck2_dep CK2)
     set(_vxmath_dep VxMath)
