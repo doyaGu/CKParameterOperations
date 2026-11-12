@@ -1,6 +1,6 @@
 # Parameter Operations
 
-Parameter Operations is the Virtools manager module that registers the parameter-operation types and functions required by Ballanced compositions.
+Parameter Operations is the Virtools manager module that registers the parameter-operation types and functions used by Virtools compositions.
 
 ## Features
 
@@ -11,17 +11,17 @@ Parameter Operations is the Virtools manager module that registers the parameter
 
 ## Support scope
 
-The instructions in this document describe Parameter Operations' `sdl` branch. That branch is built and staged by [Ballanced](https://github.com/doyaGu/Ballanced) on Windows, Linux, and macOS. It can be built as a shared manager module or linked statically into the Ballanced Player.
+The instructions in this document describe Parameter Operations' `sdl` branch. [NeMo2](https://github.com/doyaGu/NeMo2) builds and stages it on Windows, Linux, and macOS. It can be built as a shared manager module or linked statically into an application.
 
 Output names are platform-native rather than always being a Windows DLL.
 
 ## Building
 
-### Recommended: Ballanced superproject
+### NeMo2 engine
 
 ```bash
-git clone --recurse-submodules https://github.com/doyaGu/Ballanced.git
-cd Ballanced
+git clone --recurse-submodules https://github.com/doyaGu/NeMo2.git
+cd NeMo2
 cmake --preset linux-x64-runtime # choose the preset for your host
 cmake --build --preset linux-x64-runtime-stage-release
 ```
@@ -34,7 +34,7 @@ Requirements:
 
 - CMake 3.16+
 - A desktop C++ toolchain
-- CK2 and VxMath, automatically detected from a Ballanced sibling checkout
+- CK2 and VxMath, automatically detected from the NeMo2 source tree
 - A Virtools SDK supplied through `VIRTOOLS_SDK_PATH`, or fetched with `VIRTOOLS_SDK_FETCH_FROM_GIT=ON`, when sibling projects are unavailable
 
 ```bash
@@ -69,7 +69,7 @@ See [docs/FunctionCategories.md](docs/FunctionCategories.md) for the complete op
 
 ## Versioning
 
-Parameter Operations is versioned independently. Ballanced releases pin an exact manager commit.
+Parameter Operations is versioned independently. NeMo2 pins its commit.
 
 ## License
 
