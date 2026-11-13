@@ -51,6 +51,7 @@ endif ()
 # =============================================================================
 option(CKPARAMOP_BUILD_STATIC "Build static library" OFF)
 option(CKPARAMOP_BUILD_SHARED "Build shared library" ON)
+option(CKPARAMOP_BUILD_TESTS "Build parameter operation tests" OFF)
 option(CKPARAMOP_INSTALL "Generate install target" ${CKPARAMOP_IS_TOP_LEVEL})
 
 # =============================================================================
@@ -259,6 +260,34 @@ if (CKPARAMOP_BUILD_STATIC)
     set_target_properties(ParameterOperationsStatic PROPERTIES
             ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     )
+endif ()
+
+# =============================================================================
+# Tests
+# =============================================================================
+if (CKPARAMOP_BUILD_TESTS)
+    include(CTest)
+    if (BUILD_TESTING)
+        add_executable(ParameterOperationsRandomTest tests/RandomContextTest.cpp
+                ParameterOperationFunctions.cpp)
+        ckparamop_configure_target(ParameterOperationsRandomTest)
+        set_target_properties(ParameterOperationsRandomTest PROPERTIES
+                RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+        if (WIN32)
+            foreach (_runtime IN ITEMS CK2 VxMath SDL3::SDL3)
+                if (TARGET ${_runtime})
+                    get_target_property(_type ${_runtime} TYPE)
+                    if (_type STREQUAL "SHARED_LIBRARY")
+                        add_custom_command(TARGET ParameterOperationsRandomTest POST_BUILD
+                                COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                                "$<TARGET_FILE:${_runtime}>" "$<TARGET_FILE_DIR:ParameterOperationsRandomTest>"
+                                VERBATIM)
+                    endif ()
+                endif ()
+            endforeach ()
+        endif ()
+        add_test(NAME ParameterOperationsRandomTest COMMAND ParameterOperationsRandomTest)
+    endif ()
 endif ()
 
 # =============================================================================

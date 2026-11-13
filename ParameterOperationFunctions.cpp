@@ -309,7 +309,7 @@ void CKFloatRandomFloatFloat(CKContext *context, CKParameterOut *res, CKParamete
 
     // rand() scaled to [0, 1) then mapped to [min, max]
     // Original constant: 0.000030518499 (approx 1.0 / 32768.0)
-    float randNorm = (float)rand() * 3.0518499e-05f;
+    float randNorm = (float)context->Random() * 3.0518499e-05f;
     float result = minVal + randNorm * (maxVal - minVal2);
 
     *(float *)res->GetWriteDataPtr() = result;
@@ -1214,7 +1214,7 @@ void CKIntRandomIntInt(CKContext *context, CKParameterOut *res, CKParameterIn *p
     int range = maxVal - minVal + 1;
     HandleDivByZeroInt(&range, context, res);
     int minValAgain = ReadInt(p1);
-    *(int *)res->GetWriteDataPtr() = minValAgain + rand() % range;
+    *(int *)res->GetWriteDataPtr() = minValAgain + context->Random() % range;
 }
 
 // Original symbol: ?CKIntAddIntFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -1727,7 +1727,7 @@ void CKBoolNotBool(CKContext *context, CKParameterOut *res, CKParameterIn *p1, C
 // Returns a random boolean value (0 or 1)
 void CKBoolRandom(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    *(int *)res->GetWriteDataPtr() = rand() & 1;
+    *(int *)res->GetWriteDataPtr() = context->Random() & 1;
 }
 
 // Original symbol: ?CKBoolInfFloatFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -2426,9 +2426,9 @@ void CKVectorRandom(CKContext *context, CKParameterOut *res, CKParameterIn *p1, 
 {
     // 0.000030518509 = 1.0 / 32768.0 (convert rand() 0-32767 to 0.0-1.0)
     const float scale = 0.000030518509f;
-    float x = (float)rand() * scale;
-    float y = (float)rand() * scale;
-    float z = (float)rand() * scale;
+    float x = (float)context->Random() * scale;
+    float y = (float)context->Random() * scale;
+    float z = (float)context->Random() * scale;
 
     float *out = (float *)res->GetWriteDataPtr();
     out[0] = x;
@@ -3899,8 +3899,8 @@ void CK2dVectorInverse2dVector(CKContext *context, CKParameterOut *res, CKParame
 void CK2dVectorRandom(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
     Vx2DVector *result = (Vx2DVector *)res->GetWriteDataPtr();
-    result->x = (float)rand() * (1.0f / 32768.0f);
-    result->y = (float)rand() * (1.0f / 32768.0f);
+    result->x = (float)context->Random() * (1.0f / 32768.0f);
+    result->y = (float)context->Random() * (1.0f / 32768.0f);
 }
 
 // Original symbol: ?CK2dVectorMultiply2dVectorFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -4572,9 +4572,9 @@ void CKColorRandom(CKContext *context, CKParameterOut *res, CKParameterIn *p1, C
 {
     const float scale = 1.0f / 32768.0f;
     float *result = (float *)res->GetWriteDataPtr();
-    result[0] = (float)rand() * scale;  // R
-    result[1] = (float)rand() * scale;  // G
-    result[2] = (float)rand() * scale;  // B
+    result[0] = (float)context->Random() * scale;  // R
+    result[1] = (float)context->Random() * scale;  // G
+    result[2] = (float)context->Random() * scale;  // B
     result[3] = 1.0f;                   // A = 1
 }
 
