@@ -1,3 +1,4 @@
+#include "X87Trigonometry.h"
 #include "CKAll.h"
 #include <cfloat>
 #include <cmath>
@@ -355,13 +356,20 @@ void CKFloatInverseFloat(CKContext *context, CKParameterOut *res, CKParameterIn 
     *(float *)res->GetWriteDataPtr() = 1.0f / val;
 }
 
+static void WriteTrigResult(CKParameterOut *out, CKParameterIn *input, x87_trig_op op)
+{
+    uint32_t word;
+    ReadFloatSample(input, &word);
+    word = x87_trig_word(op, word);
+    std::memcpy(out->GetWriteDataPtr(), &word, sizeof(word));
+}
+
 // Original symbol: ?CKFloatSinusFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B41FA0
 // Returns sine of input (in radians): result = sin(p1)
 void CKFloatSinusFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    float val = ReadFloat(p1);
-    *(float *)res->GetWriteDataPtr() = sinf(val);
+    WriteTrigResult(res, p1, X87_SINE);
 }
 
 /* CK2 rounds x87 arithmetic to 24 significant bits with a wide exponent.
@@ -449,8 +457,7 @@ void CKFloatSqrtFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1
 // Returns cosine of input (in radians): result = cos(p1)
 void CKFloatCosinusFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    float val = ReadFloat(p1);
-    *(float *)res->GetWriteDataPtr() = cosf(val);
+    WriteTrigResult(res, p1, X87_COSINE);
 }
 
 // Original symbol: ?CKFloatTanFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -458,8 +465,7 @@ void CKFloatCosinusFloat(CKContext *context, CKParameterOut *res, CKParameterIn 
 // Returns tangent of input (in radians): result = tan(p1)
 void CKFloatTanFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    float val = ReadFloat(p1);
-    *(float *)res->GetWriteDataPtr() = tanf(val);
+    WriteTrigResult(res, p1, X87_TANGENT);
 }
 
 // Original symbol: ?CKFloatArcTanFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
