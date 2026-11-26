@@ -1,4 +1,5 @@
 #include "CKAll.h"
+#include <cfloat>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -368,21 +369,27 @@ void CKFloatSinusFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p
     *(float *)res->GetWriteDataPtr() = sinf(val);
 }
 
-/* The x87 arithmetic bindings round once at 24 significant bits. Both
- * operands (INT32 and binary32) are exact in double. When their difference
- * lands at a binary32 midpoint in double, its lost tail can decide the tie.
- * FastTwoSum recovers that tail; rounding the double to odd preserves its
- * direction through the final nearest-even conversion. */
+/* CK2 rounds x87 arithmetic to 24 significant bits with a wide exponent.
+ * The residual sign breaks a false midpoint introduced by binary64.
+ * For subnormals, perform the register rounding before the binary32 store.
+ * The smallest nonzero mixed quotient is at least 2^-180. */
+static float round_mixed_result(double value, double residual)
+{
+    uint64_t bits;
+    std::memcpy(&bits, &value, sizeof(bits));
+    if (residual != 0.0 && !(bits & 1u))
+        value = std::nextafter(value, residual > 0.0 ? INFINITY : -INFINITY);
+    if (std::fabs(value) < FLT_MIN)
+        return (float)((double)(float)(value * 0x1p64) * 0x1p-64);
+    return (float)value;
+}
+
 static float mixed_difference(double left, double right)
 {
-    double sum = left - right;
-    if (std::isfinite(sum)) {
-        const double tail = fabs(left) >= fabs(right) ? (left - sum) - right : left - (sum + right);
-        uint64_t bits;
-        std::memcpy(&bits, &sum, sizeof(bits));
-        if (tail != 0.0 && !(bits & 1u)) sum = nextafter(sum, tail > 0.0 ? INFINITY : -INFINITY);
-    }
-    return (float)sum;
+    const double sum = left - right;
+    if (!std::isfinite(sum)) return (float)sum;
+    const double tail = std::fabs(left) >= std::fabs(right) ? (left - sum) - right : left - (sum + right);
+    return round_mixed_result(sum, tail);
 }
 
 /* _ftol stores the low DWORD of a signed 64-bit truncation. The x87
@@ -398,6 +405,23 @@ static float x87_indefinite(void)
     float value;
     std::memcpy(&value, &bits, sizeof(value));
     return value;
+}
+
+static float mixed_product(int32_t integer, float real)
+{
+    if (integer == 0 && std::isinf(real)) return x87_indefinite();
+    const double product = (double)integer * real;
+    if (!std::isfinite(product)) return (float)product;
+    return round_mixed_result(product, std::fma(integer, real, -product));
+}
+
+/* The caller has already replaced a zero divisor with one. */
+static float mixed_quotient(double numerator, double divisor)
+{
+    const double quotient = numerator / divisor;
+    if (!std::isfinite(quotient) || !std::isfinite(divisor)) return (float)quotient;
+    const double remainder = std::fma(-quotient, divisor, numerator);
+    return round_mixed_result(quotient, divisor < 0.0 ? -remainder : remainder);
 }
 
 // Original symbol: ?CKFloatSqrtFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -458,12 +482,12 @@ void CKFloatArcSinFloat(CKContext *context, CKParameterOut *res, CKParameterIn *
 
 // Original symbol: ?CKFloatAddFloatInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B42370
-// result = float(p1) + (float)int(p2)
+// result = FLOAT + exact INT
 void CKFloatAddFloatInt(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
     float val = ReadFloat(p1);
     int ival = ReadInt(p2);
-    *(float *)res->GetWriteDataPtr() = val + (float)ival;
+    *(float *)res->GetWriteDataPtr() = mixed_difference(val, -(double)ival);
 }
 
 // Original symbol: ?CKFloatSubtractFloatInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -488,34 +512,34 @@ void CKFloatSubtractIntFloat(CKContext *context, CKParameterOut *res, CKParamete
 
 // Original symbol: ?CKFloatMultiplyFloatInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B42590
-// result = float(p1) * (float)int(p2)
+// result = FLOAT * exact INT
 void CKFloatMultiplyFloatInt(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
     float val = ReadFloat(p1);
     int ival = ReadInt(p2);
-    *(float *)res->GetWriteDataPtr() = val * (float)ival;
+    *(float *)res->GetWriteDataPtr() = mixed_product(ival, val);
 }
 
 // Original symbol: ?CKFloatDivideFloatInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B42640
-// result = float(p1) / (float)int(p2), with div-by-zero check
+// result = FLOAT / exact INT, with div-by-zero check
 void CKFloatDivideFloatInt(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
     int ival = ReadInt(p2);
     HandleDivByZeroInt(&ival, context, res);
     float fval = ReadFloat(p1);
-    *(float *)res->GetWriteDataPtr() = fval / (float)ival;
+    *(float *)res->GetWriteDataPtr() = mixed_quotient(fval, ival);
 }
 
 // Original symbol: ?CKFloatDivideIntFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B42710
-// result = (float)int(p1) / float(p2), with div-by-zero check
+// result = exact INT / FLOAT, with div-by-zero check
 void CKFloatDivideIntFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
     float fval = ReadFloat(p2);
     HandleDivByZeroFloat(&fval, context, res);
     int ival = ReadInt(p1);
-    *(float *)res->GetWriteDataPtr() = (float)ival / fval;
+    *(float *)res->GetWriteDataPtr() = mixed_quotient(ival, fval);
 }
 
 // Each numeric getter can run a producer and publish back into either input.
@@ -1299,12 +1323,13 @@ void CKIntRandomIntInt(CKContext *context, CKParameterOut *res, CKParameterIn *p
 
 // Original symbol: ?CKIntAddIntFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B45010
-// Adds int and float, returns truncated int result
+// Truncate the float first, then add its low word to the integer.
 void CKIntAddIntFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
     int val1 = ReadInt(p1);
     float val2 = ReadFloat(p2);
-    *(int *)res->GetWriteDataPtr() = (int)(val1 + val2);
+    const uint32_t word = (uint32_t)val1 + trunc_low_word(val2);
+    std::memcpy(res->GetWriteDataPtr(), &word, sizeof(word));
 }
 
 // Original symbol: ?CKIntSubtractIntFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -1336,7 +1361,8 @@ void CKIntMultiplyIntFloat(CKContext *context, CKParameterOut *res, CKParameterI
 {
     int val1 = ReadInt(p1);
     float val2 = ReadFloat(p2);
-    *(int *)res->GetWriteDataPtr() = (int)(val1 * val2);
+    const uint32_t word = trunc_low_word(mixed_product(val1, val2));
+    std::memcpy(res->GetWriteDataPtr(), &word, sizeof(word));
 }
 
 // Original symbol: ?CKIntDivideIntFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -1347,7 +1373,8 @@ void CKIntDivideIntFloat(CKContext *context, CKParameterOut *res, CKParameterIn 
     float val2 = ReadFloat(p2);
     HandleDivByZeroFloat(&val2, context, res);
     int val1 = ReadInt(p1);
-    *(int *)res->GetWriteDataPtr() = (int)(val1 / val2);
+    const uint32_t word = trunc_low_word(mixed_quotient(val1, val2));
+    std::memcpy(res->GetWriteDataPtr(), &word, sizeof(word));
 }
 
 // Original symbol: ?CKIntDivideFloatInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -1358,7 +1385,8 @@ void CKIntDivideFloatInt(CKContext *context, CKParameterOut *res, CKParameterIn 
     int val2 = ReadInt(p2);
     HandleDivByZeroInt(&val2, context, res);
     float val1 = ReadFloat(p1);
-    *(int *)res->GetWriteDataPtr() = (int)(val1 / val2);
+    const uint32_t word = trunc_low_word(mixed_quotient(val1, val2));
+    std::memcpy(res->GetWriteDataPtr(), &word, sizeof(word));
 }
 
 // Original symbol: ?CKIntMaxIntFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
