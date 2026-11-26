@@ -291,6 +291,7 @@ if (CKPARAMOP_BUILD_TESTS)
         endfunction()
         ckparamop_add_test(ParameterOperationsRandomTest tests/RandomContextTest.cpp)
         ckparamop_add_test(ParameterOperationsMixedOrderTest tests/MixedOrderTest.cpp)
+        ckparamop_add_test(ParameterOperationsMixedMinMaxTest tests/MixedMinMaxTest.cpp)
     endif ()
 endif ()
 
