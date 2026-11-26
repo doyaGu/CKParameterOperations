@@ -1,4 +1,5 @@
 #include "CKAll.h"
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 
@@ -221,6 +222,32 @@ void CKFloatAbsoluteFloat(CKContext *context, CKParameterOut *res, CKParameterIn
     *(float *)res->GetWriteDataPtr() = (float)fabs(val);
 }
 
+/* A NaN produced by invalid arithmetic has the x87 indefinite encoding.
+ * When either input is NaN, FLD has already quieted the register operand.
+ * The larger significand wins; for equal significands x87 prefers positive. */
+static void StoreArithmeticWord(void *out, float result, float reg, float mem)
+{
+    uint32_t word;
+    std::memcpy(&word, &result, sizeof(word));
+    if ((word & 0x7fffffffu) > 0x7f800000u) {
+        uint32_t r, m;
+        std::memcpy(&r, &reg, sizeof(r));
+        std::memcpy(&m, &mem, sizeof(m));
+        uint32_t rm = r & 0x7fffffffu;
+        const uint32_t mm = m & 0x7fffffffu;
+        if (rm > 0x7f800000u) {
+            r |= 0x00400000u;
+            rm = r & 0x7fffffffu;
+            word = mm > rm || (mm == rm && m < r) ? m : r;
+        } else if (mm > 0x7f800000u) {
+            word = m | 0x00400000u;
+        } else {
+            word = 0xffc00000u;
+        }
+    }
+    std::memcpy(out, &word, sizeof(word));
+}
+
 // Original symbol: ?CKFloatAddFloatFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B41A00
 // Adds two floats: result = p1 + p2
@@ -228,7 +255,7 @@ void CKFloatAddFloatFloat(CKContext *context, CKParameterOut *res, CKParameterIn
 {
     float v1 = ReadFloat(p1);
     float v2 = ReadFloat(p2);
-    *(float *)res->GetWriteDataPtr() = v1 + v2;
+    StoreArithmeticWord(res->GetWriteDataPtr(), v1 + v2, v2, v1);
 }
 
 // Original symbol: ?CKFloatSubtractFloatFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -238,7 +265,7 @@ void CKFloatSubtractFloatFloat(CKContext *context, CKParameterOut *res, CKParame
 {
     float v1 = ReadFloat(p1);
     float v2 = ReadFloat(p2);
-    *(float *)res->GetWriteDataPtr() = v1 - v2;
+    StoreArithmeticWord(res->GetWriteDataPtr(), v1 - v2, v1, v2);
 }
 
 // Original symbol: ?CKFloatMultiplyFloatFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -248,7 +275,7 @@ void CKFloatMultiplyFloatFloat(CKContext *context, CKParameterOut *res, CKParame
 {
     float v1 = ReadFloat(p1);
     float v2 = ReadFloat(p2);
-    *(float *)res->GetWriteDataPtr() = v1 * v2;
+    StoreArithmeticWord(res->GetWriteDataPtr(), v1 * v2, v2, v1);
 }
 
 // Original symbol: ?CKFloatDivideFloatFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -331,13 +358,45 @@ void CKFloatSinusFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p
     *(float *)res->GetWriteDataPtr() = sinf(val);
 }
 
+/* The x87 arithmetic bindings round once at 24 significant bits. Both
+ * operands (INT32 and binary32) are exact in double. When their difference
+ * lands at a binary32 midpoint in double, its lost tail can decide the tie.
+ * FastTwoSum recovers that tail; rounding the double to odd preserves its
+ * direction through the final nearest-even conversion. */
+static float mixed_difference(double left, double right)
+{
+    double sum = left - right;
+    if (std::isfinite(sum)) {
+        const double tail = fabs(left) >= fabs(right) ? (left - sum) - right : left - (sum + right);
+        uint64_t bits;
+        std::memcpy(&bits, &sum, sizeof(bits));
+        if (tail != 0.0 && !(bits & 1u)) sum = nextafter(sum, tail > 0.0 ? INFINITY : -INFINITY);
+    }
+    return (float)sum;
+}
+
+/* _ftol stores the low DWORD of a signed 64-bit truncation. The x87
+ * indefinite integer returned for invalid conversions has a zero low word. */
+static uint32_t trunc_low_word(float value)
+{
+    return value >= -0x1p63 && value < 0x1p63 ? (uint32_t)(int64_t)value : 0;
+}
+
+static float x87_indefinite(void)
+{
+    const uint32_t bits = 0xffc00000u;
+    float value;
+    std::memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+
 // Original symbol: ?CKFloatSqrtFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B42280
 // Returns square root: result = sqrt(p1)
 void CKFloatSqrtFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
     float val = ReadFloat(p1);
-    *(float *)res->GetWriteDataPtr() = sqrtf(val);
+    *(float *)res->GetWriteDataPtr() = val < 0.0f ? x87_indefinite() : sqrtf(val);
 }
 
 // Original symbol: ?CKFloatCosinusFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -384,7 +443,7 @@ void CKFloatArcCosFloat(CKContext *context, CKParameterOut *res, CKParameterIn *
 void CKFloatArcSinFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
     float val = ReadFloat(p1);
-    *(float *)res->GetWriteDataPtr() = asinf(val);
+    *(float *)res->GetWriteDataPtr() = fabsf(val) > 1.0f ? x87_indefinite() : static_cast<float>(asin(static_cast<double>(val)));
 }
 
 // Original symbol: ?CKFloatAddFloatInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -404,7 +463,7 @@ void CKFloatSubtractFloatInt(CKContext *context, CKParameterOut *res, CKParamete
 {
     float val = ReadFloat(p1);
     int ival = ReadInt(p2);
-    *(float *)res->GetWriteDataPtr() = val - (float)ival;
+    *(float *)res->GetWriteDataPtr() = mixed_difference(val, ival);
 }
 
 // Original symbol: ?CKFloatSubtractIntFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -414,7 +473,7 @@ void CKFloatSubtractIntFloat(CKContext *context, CKParameterOut *res, CKParamete
 {
     int ival = ReadInt(p1);
     float fval = ReadFloat(p2);
-    *(float *)res->GetWriteDataPtr() = (float)ival - fval;
+    *(float *)res->GetWriteDataPtr() = mixed_difference(ival, fval);
 }
 
 // Original symbol: ?CKFloatMultiplyFloatInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -469,7 +528,7 @@ static void MixedExtremum(CKParameterOut *res, CKParameterIn *first, CKParameter
     } else {
         // The original stores the low word of _ftol(binary32). Invalid
         // conversions produce the x87 indefinite integer with a zero low word.
-        const uint32_t result = value >= -0x1p63 && value < 0x1p63 ? static_cast<uint32_t>(static_cast<int64_t>(value)) : 0;
+        const uint32_t result = trunc_low_word(value);
         std::memcpy(res->GetWriteDataPtr(), &result, sizeof(result));
     }
 }
@@ -525,7 +584,7 @@ void CKFloatRadianToDegreFloat(CKContext *context, CKParameterOut *res, CKParame
 void CKFloatInverseInt(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
     int ival = ReadInt(p1);
-    *(float *)res->GetWriteDataPtr() = 1.0f / (float)ival;
+    *(float *)res->GetWriteDataPtr() = static_cast<float>(1.0 / static_cast<double>(ival));
 }
 
 // Original symbol: ?CKFloatGetDistance3dEntity@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -1245,7 +1304,8 @@ void CKIntSubtractIntFloat(CKContext *context, CKParameterOut *res, CKParameterI
 {
     int val1 = ReadInt(p1);
     float val2 = ReadFloat(p2);
-    *(int *)res->GetWriteDataPtr() = (int)(val1 - val2);
+    const uint32_t word = trunc_low_word(mixed_difference(val1, val2));
+    std::memcpy(res->GetWriteDataPtr(), &word, sizeof(word));
 }
 
 // Original symbol: ?CKIntSubtractFloatInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -1255,7 +1315,8 @@ void CKIntSubtractFloatInt(CKContext *context, CKParameterOut *res, CKParameterI
 {
     float val1 = ReadFloat(p1);
     int val2 = ReadInt(p2);
-    *(int *)res->GetWriteDataPtr() = (int)(val1 - val2);
+    const uint32_t word = trunc_low_word(mixed_difference(val1, val2));
+    std::memcpy(res->GetWriteDataPtr(), &word, sizeof(word));
 }
 
 // Original symbol: ?CKIntMultiplyIntFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -1321,7 +1382,8 @@ void CKIntSetFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, C
 void CKIntInverseFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
     float val = ReadFloat(p1);
-    *(int *)res->GetWriteDataPtr() = (int)(1.0f / val);
+    const uint32_t word = trunc_low_word(1.0f / val);
+    std::memcpy(res->GetWriteDataPtr(), &word, sizeof(word));
 }
 
 // Original symbol: ?CKIntGetLengthString@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
