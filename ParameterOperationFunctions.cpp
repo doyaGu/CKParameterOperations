@@ -204,13 +204,23 @@ void CKFloatPerSecondFloat(CKContext *context, CKParameterOut *res, CKParameterI
     *(float *)res->GetWriteDataPtr() = val * deltaTime;
 }
 
+// FLD quiets signaling NaNs before FCHS and FABS operate on the sign.
+static uint32_t ReadLoadedFloatWord(CKParameterIn *pin)
+{
+    const float *ptr = ReadFloatPtr(pin);
+    uint32_t word = 0;
+    if (ptr) std::memcpy(&word, ptr, sizeof(word));
+    if ((word & 0x7fffffffu) > 0x7f800000u) word |= 0x00400000u;
+    return word;
+}
+
 // Original symbol: ?CKFloatOppositeFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B41920
 // Negates the input float: result = -p1
 void CKFloatOppositeFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    float val = ReadFloat(p1);
-    *(float *)res->GetWriteDataPtr() = -val;
+    const uint32_t word = ReadLoadedFloatWord(p1) ^ 0x80000000u;
+    std::memcpy(res->GetWriteDataPtr(), &word, sizeof(word));
 }
 
 // Original symbol: ?CKFloatAbsoluteFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -218,8 +228,8 @@ void CKFloatOppositeFloat(CKContext *context, CKParameterOut *res, CKParameterIn
 // Returns absolute value of input float: result = |p1|
 void CKFloatAbsoluteFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    float val = ReadFloat(p1);
-    *(float *)res->GetWriteDataPtr() = (float)fabs(val);
+    const uint32_t word = ReadLoadedFloatWord(p1) & 0x7fffffffu;
+    std::memcpy(res->GetWriteDataPtr(), &word, sizeof(word));
 }
 
 /* A NaN produced by invalid arithmetic has the x87 indefinite encoding.
@@ -1372,8 +1382,8 @@ void CKIntMinIntFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1
 // Converts float to int (truncates)
 void CKIntSetFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    float val = ReadFloat(p1);
-    *(int *)res->GetWriteDataPtr() = (int)val;
+    const uint32_t word = trunc_low_word(ReadFloat(p1));
+    std::memcpy(res->GetWriteDataPtr(), &word, sizeof(word));
 }
 
 // Original symbol: ?CKIntInverseFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
