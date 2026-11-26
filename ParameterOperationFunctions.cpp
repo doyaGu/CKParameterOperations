@@ -264,21 +264,26 @@ void CKFloatDivideFloatFloat(CKContext *context, CKParameterOut *res, CKParamete
     *(float *)res->GetWriteDataPtr() = v1 / v2;
 }
 
+// The two active getters return storage addresses. The left getter may publish
+// into the right storage, so compare only after both getters have returned.
+static void FloatExtremum(CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2, bool minimum)
+{
+    const float zero = 0.0f;
+    const float *right = ReadFloatPtr(p2);
+    const float *left = ReadFloatPtr(p1);
+    if (!right) right = &zero;
+    if (!left) left = &zero;
+    const bool takeLeft = minimum ? *left < *right : *left > *right;
+    // Copy the selected word verbatim, including a signaling NaN or signed zero.
+    std::memmove(res->GetWriteDataPtr(), takeLeft ? left : right, sizeof(float));
+}
+
 // Original symbol: ?CKFloatMaxFloatFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B41CF0
 // Returns maximum of two floats: result = max(p1, p2)
 void CKFloatMaxFloatFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    // Note: original reads p2 first, then p1
-    float *ptr2 = ReadFloatPtr(p2);
-    float v2 = ptr2 ? *ptr2 : 0.0f;
-
-    float *ptr1 = ReadFloatPtr(p1);
-    float v1 = ptr1 ? *ptr1 : 0.0f;
-
-    // Original uses FPU comparison: if v1 > v2 then result = v1, else result = v2
-    float result = (v1 > v2) ? v1 : v2;
-    *(float *)res->GetWriteDataPtr() = result;
+    FloatExtremum(res, p1, p2, false);
 }
 
 // Original symbol: ?CKFloatMinFloatFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -286,16 +291,7 @@ void CKFloatMaxFloatFloat(CKContext *context, CKParameterOut *res, CKParameterIn
 // Returns minimum of two floats: result = min(p1, p2)
 void CKFloatMinFloatFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    // Note: original reads p2 first, then p1
-    float *ptr2 = ReadFloatPtr(p2);
-    float v2 = ptr2 ? *ptr2 : 0.0f;
-
-    float *ptr1 = ReadFloatPtr(p1);
-    float v1 = ptr1 ? *ptr1 : 0.0f;
-
-    // Original uses FPU comparison: if v1 < v2 then result = v1, else result = v2
-    float result = (v1 < v2) ? v1 : v2;
-    *(float *)res->GetWriteDataPtr() = result;
+    FloatExtremum(res, p1, p2, true);
 }
 
 // Original symbol: ?CKFloatRandomFloatFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
