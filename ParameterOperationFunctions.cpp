@@ -1,4 +1,6 @@
 #include "CKAll.h"
+#include <cstdint>
+#include <cstring>
 
 #include "ParameterOperationTypes.h"
 
@@ -451,18 +453,37 @@ void CKFloatDivideIntFloat(CKContext *context, CKParameterOut *res, CKParameterI
     *(float *)res->GetWriteDataPtr() = (float)ival / fval;
 }
 
+// Each numeric getter can run a producer and publish back into either input.
+// Capture the first sample before reading the second, then demand the winner anew.
+static void MixedExtremum(CKParameterOut *res, CKParameterIn *first, CKParameterIn *second,
+                          bool floatResult, bool minimum)
+{
+    const double left = floatResult ? static_cast<double>(ReadFloat(first)) : static_cast<double>(ReadInt(first));
+    const double right = floatResult ? static_cast<double>(ReadInt(second)) : static_cast<double>(ReadFloat(second));
+    const bool takeFirst = minimum ? left < right : left > right;
+    CKParameterIn *winner = takeFirst ? first : second;
+    float value = 0.0f;
+    if (takeFirst == floatResult) {
+        if (const float *ptr = ReadFloatPtr(winner)) std::memcpy(&value, ptr, sizeof(value));
+    } else {
+        value = static_cast<float>(ReadInt(winner));
+    }
+    if (floatResult) {
+        std::memcpy(res->GetWriteDataPtr(), &value, sizeof(value));
+    } else {
+        // The original stores the low word of _ftol(binary32). Invalid
+        // conversions produce the x87 indefinite integer with a zero low word.
+        const uint32_t result = value >= -0x1p63 && value < 0x1p63 ? static_cast<uint32_t>(static_cast<int64_t>(value)) : 0;
+        std::memcpy(res->GetWriteDataPtr(), &result, sizeof(result));
+    }
+}
+
 // Original symbol: ?CKFloatMaxFloatInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B427E0
 // result = max(float(p1), (float)int(p2))
 void CKFloatMaxFloatInt(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    float fval = ReadFloat(p1);
-    int ival = ReadInt(p2);
-    // If (float)ival < fval, use fval; otherwise convert ival to float result
-    if ((float)ival < fval)
-        *(float *)res->GetWriteDataPtr() = fval;
-    else
-        *(float *)res->GetWriteDataPtr() = (float)ival;
+    MixedExtremum(res, p1, p2, true, false);
 }
 
 // Original symbol: ?CKFloatMinFloatInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -470,13 +491,7 @@ void CKFloatMaxFloatInt(CKContext *context, CKParameterOut *res, CKParameterIn *
 // result = min(float(p1), (float)int(p2))
 void CKFloatMinFloatInt(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    float fval = ReadFloat(p1);
-    int ival = ReadInt(p2);
-    // If (float)ival > fval, use fval; otherwise convert ival to float result
-    if ((float)ival > fval)
-        *(float *)res->GetWriteDataPtr() = fval;
-    else
-        *(float *)res->GetWriteDataPtr() = (float)ival;
+    MixedExtremum(res, p1, p2, true, true);
 }
 
 // Original symbol: ?CKFloatSetInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -1284,12 +1299,7 @@ void CKIntDivideFloatInt(CKContext *context, CKParameterOut *res, CKParameterIn 
 // Returns the maximum of int and float (as int)
 void CKIntMaxIntFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    int val1 = ReadInt(p1);
-    float val2 = ReadFloat(p2);
-    if ((float)val1 > val2)
-        *(int *)res->GetWriteDataPtr() = val1;
-    else
-        *(int *)res->GetWriteDataPtr() = (int)val2;
+    MixedExtremum(res, p1, p2, false, false);
 }
 
 // Original symbol: ?CKIntMinIntFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -1297,12 +1307,7 @@ void CKIntMaxIntFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1
 // Returns the minimum of int and float (as int)
 void CKIntMinIntFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    int val1 = ReadInt(p1);
-    float val2 = ReadFloat(p2);
-    if ((float)val1 < val2)
-        *(int *)res->GetWriteDataPtr() = val1;
-    else
-        *(int *)res->GetWriteDataPtr() = (int)val2;
+    MixedExtremum(res, p1, p2, false, true);
 }
 
 // Original symbol: ?CKIntSetFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
