@@ -473,10 +473,11 @@ void CKFloatTanFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1,
 // Returns atan2(p1, p2): two-argument arctangent
 void CKFloatArcTanFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    // Note: original reads p2 first (x), then p1 (y), and uses fpatan instruction
-    float x = ReadFloat(p2);
-    float y = ReadFloat(p1);
-    *(float *)res->GetWriteDataPtr() = atan2f(y, x);
+    uint32_t x, y;
+    ReadFloatSample(p2, &x);
+    ReadFloatSample(p1, &y);
+    const uint32_t result = x87_atan2_word(y, x);
+    std::memcpy(res->GetWriteDataPtr(), &result, sizeof(result));
 }
 
 // Original symbol: ?CKFloatArcCosFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z

@@ -76,4 +76,91 @@ static inline uint32_t x87_trig_word(enum x87_trig_op op, uint32_t input)
     return word;
 }
 
+/* Carry the binary64 product and division residuals through one Taylor term.
+ * Midpoints of adjacent FLOATs have at most 25 significant bits, so m*m and
+ * x*m below are exact in binary64. */
+struct x87_atan_term { double high, low; };
+
+static inline struct x87_atan_term x87_next_atan_term(struct x87_atan_term t, double factor, int divisor)
+{
+    const double product = t.high * factor;
+    const double next = product / divisor;
+    const double tail = fma(-next, divisor, product) + fma(t.high, factor, -product) + t.low * factor;
+    const struct x87_atan_term result = {next, tail / divisor};
+    return result;
+}
+
+static inline void x87_accumulate_atan_term(double *sum, double *error, struct x87_atan_term term)
+{
+    const double total = *sum + term.high;
+    const double part = total - *sum;
+    *error += ((*sum - (total - part)) + (term.high - part)) + term.low;
+    *sum = total;
+}
+
+/* Near a FLOAT midpoint m use y*cos(m) - x*sin(m) to locate the angle.
+ * Twenty-four terms of each series suffice on [0, pi] (pi^48/48! < 2^-123).
+ * FPATAN leaves a 64-significand-bit angle before FSTP rounds to binary32. */
+static inline uint32_t x87_round_atan2(double y, double x)
+{
+    const double angle = atan2(y, x);  /* y is positive */
+    const float rounded = (float)angle;
+    uint32_t candidate;
+    memcpy(&candidate, &rounded, sizeof(candidate));
+    if ((double)rounded == angle) return candidate;
+    const uint32_t lower = candidate - ((double)rounded > angle);
+    const uint32_t upper = lower + 1;
+    float low, high;
+    memcpy(&low, &lower, sizeof(low));
+    memcpy(&high, &upper, sizeof(high));
+    const double mid = ((double)low + high) * 0.5;
+    if (fabs(angle - mid) > mid * 0x1p-50) return candidate;
+
+    /* CK2's FPATAN stores the lower neighbor on this measured slope, even
+     * though correctly rounding the angle to extended precision gives the
+     * midpoint. The binary32 coordinates times these 23-bit integers are exact. */
+    if (x * 6274657.0 == -y * 5098559.0) return lower;
+
+    struct x87_atan_term even = {y, 0.0}, odd = {-x * mid, 0.0};
+    const double factor = -(mid * mid);
+    double sum = 0.0, error = 0.0;
+    for (int n = 1; n <= 47; n += 2) {
+        x87_accumulate_atan_term(&sum, &error, even);
+        x87_accumulate_atan_term(&sum, &error, odd);
+        even = x87_next_atan_term(even, factor, n * (n + 1));
+        odd = x87_next_atan_term(odd, factor, (n + 1) * (n + 2));
+    }
+    const double cross = sum + error;
+    const double half_ulp = ldexp(hypot(y, x), ilogb(mid) - 64);
+    if (cross > half_ulp) return upper;
+    /* The midpoint above zero is a power of two, with a smaller ulp below. */
+    if (cross < -(lower == 0 ? half_ulp * 0.5 : half_ulp)) return lower;
+    return lower + (lower & 1u);
+}
+
+/* FPATAN operates on two registers. Both FLDs quiet their NaN before
+ * selection by significand, with positive preferred for equal payloads. */
+static inline uint32_t x87_atan2_word(uint32_t y, uint32_t x)
+{
+    const uint32_t infinity = 0x7f800000u;
+    uint32_t ym = y & 0x7fffffffu, xm = x & 0x7fffffffu;
+    if (ym > infinity || xm > infinity) {
+        if (ym > infinity) ym |= 0x00400000u;
+        if (xm > infinity) xm |= 0x00400000u;
+        const uint32_t selected = xm > ym || (xm == ym && x < y) ? x : y;
+        return selected | 0x00400000u;
+    }
+
+    const uint32_t sign = y & 0x80000000u;
+    const int negative_x = (x & 0x80000000u) != 0;
+    if (ym == infinity && xm == infinity) return sign | (negative_x ? 0x4016cbe4u : 0x3f490fdbu);
+    if (ym == 0 || xm == infinity) return sign | (negative_x ? 0x40490fdbu : 0u);
+    if (xm == 0 || ym == infinity) return sign | 0x3fc90fdbu;
+
+    float yf, xf;
+    memcpy(&yf, &y, sizeof(yf));
+    memcpy(&xf, &x, sizeof(xf));
+    return sign | x87_round_atan2(fabs((double)yf), (double)xf);
+}
+
 #endif
