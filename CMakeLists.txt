@@ -268,25 +268,29 @@ endif ()
 if (CKPARAMOP_BUILD_TESTS)
     include(CTest)
     if (BUILD_TESTING)
-        add_executable(ParameterOperationsRandomTest tests/RandomContextTest.cpp
-                ParameterOperationFunctions.cpp)
-        ckparamop_configure_target(ParameterOperationsRandomTest)
-        set_target_properties(ParameterOperationsRandomTest PROPERTIES
-                RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-        if (WIN32)
-            foreach (_runtime IN ITEMS CK2 VxMath SDL3::SDL3)
-                if (TARGET ${_runtime})
-                    get_target_property(_type ${_runtime} TYPE)
-                    if (_type STREQUAL "SHARED_LIBRARY")
-                        add_custom_command(TARGET ParameterOperationsRandomTest POST_BUILD
-                                COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                                "$<TARGET_FILE:${_runtime}>" "$<TARGET_FILE_DIR:ParameterOperationsRandomTest>"
-                                VERBATIM)
+        function(ckparamop_add_test target source)
+            add_executable(${target} ${source}
+                    ParameterOperationFunctions.cpp)
+            ckparamop_configure_target(${target})
+            set_target_properties(${target} PROPERTIES
+                    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+            if (WIN32)
+                foreach (_runtime IN ITEMS CK2 VxMath SDL3::SDL3)
+                    if (TARGET ${_runtime})
+                        get_target_property(_type ${_runtime} TYPE)
+                        if (_type STREQUAL "SHARED_LIBRARY")
+                            add_custom_command(TARGET ${target} POST_BUILD
+                                    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                                    "$<TARGET_FILE:${_runtime}>" "$<TARGET_FILE_DIR:${target}>"
+                                    VERBATIM)
+                        endif ()
                     endif ()
-                endif ()
-            endforeach ()
-        endif ()
-        add_test(NAME ParameterOperationsRandomTest COMMAND ParameterOperationsRandomTest)
+                endforeach ()
+            endif ()
+            add_test(NAME ${target} COMMAND ${target})
+        endfunction()
+        ckparamop_add_test(ParameterOperationsRandomTest tests/RandomContextTest.cpp)
+        ckparamop_add_test(ParameterOperationsMixedOrderTest tests/MixedOrderTest.cpp)
     endif ()
 endif ()
 
