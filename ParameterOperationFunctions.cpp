@@ -205,12 +205,20 @@ void CKFloatPerSecondFloat(CKContext *context, CKParameterOut *res, CKParameterI
     *(float *)res->GetWriteDataPtr() = val * deltaTime;
 }
 
+// An active getter can publish into either input. Capture its four bytes now,
+// including the original signaling bit for x87 memory operands.
+static void ReadFloatSample(CKParameterIn *pin, void *out)
+{
+    const float *ptr = ReadFloatPtr(pin);
+    if (ptr) std::memcpy(out, ptr, sizeof(float));
+    else std::memset(out, 0, sizeof(float));
+}
+
 // FLD quiets signaling NaNs before FCHS and FABS operate on the sign.
 static uint32_t ReadLoadedFloatWord(CKParameterIn *pin)
 {
-    const float *ptr = ReadFloatPtr(pin);
-    uint32_t word = 0;
-    if (ptr) std::memcpy(&word, ptr, sizeof(word));
+    uint32_t word;
+    ReadFloatSample(pin, &word);
     if ((word & 0x7fffffffu) > 0x7f800000u) word |= 0x00400000u;
     return word;
 }
@@ -236,7 +244,7 @@ void CKFloatAbsoluteFloat(CKContext *context, CKParameterOut *res, CKParameterIn
 /* A NaN produced by invalid arithmetic has the x87 indefinite encoding.
  * When either input is NaN, FLD has already quieted the register operand.
  * The larger significand wins; for equal significands x87 prefers positive. */
-static void StoreArithmeticWord(void *out, float result, float reg, float mem)
+static void StoreArithmeticWord(void *out, float result, const float &reg, const float &mem)
 {
     uint32_t word;
     std::memcpy(&word, &result, sizeof(word));
@@ -287,19 +295,6 @@ void CKFloatMultiplyFloatFloat(CKContext *context, CKParameterOut *res, CKParame
     float v1 = ReadFloat(p1);
     float v2 = ReadFloat(p2);
     StoreArithmeticWord(res->GetWriteDataPtr(), v1 * v2, v2, v1);
-}
-
-// Original symbol: ?CKFloatDivideFloatFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
-// opfunc_ea=0x24B41C20
-// Divides two floats: result = p1 / p2 (with divide-by-zero handling)
-void CKFloatDivideFloatFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
-{
-    // Read divisor first (matches original binary order)
-    float v2 = ReadFloat(p2);
-    HandleDivByZeroFloat(&v2, context, res);
-
-    float v1 = ReadFloat(p1);
-    *(float *)res->GetWriteDataPtr() = v1 / v2;
 }
 
 // The two active getters return storage addresses. The left getter may publish
@@ -372,15 +367,15 @@ void CKFloatSinusFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p
 /* CK2 rounds x87 arithmetic to 24 significant bits with a wide exponent.
  * The residual sign breaks a false midpoint introduced by binary64.
  * For subnormals, perform the register rounding before the binary32 store.
- * The smallest nonzero mixed quotient is at least 2^-180. */
-static float round_mixed_result(double value, double residual)
+ * Scaling by 2^160 normalizes even the smallest binary32/binary32 quotient. */
+static float round_x87_result(double value, double residual)
 {
     uint64_t bits;
     std::memcpy(&bits, &value, sizeof(bits));
     if (residual != 0.0 && !(bits & 1u))
         value = std::nextafter(value, residual > 0.0 ? INFINITY : -INFINITY);
     if (std::fabs(value) < FLT_MIN)
-        return (float)((double)(float)(value * 0x1p64) * 0x1p-64);
+        return (float)((double)(float)(value * 0x1p160) * 0x1p-160);
     return (float)value;
 }
 
@@ -389,7 +384,7 @@ static float mixed_difference(double left, double right)
     const double sum = left - right;
     if (!std::isfinite(sum)) return (float)sum;
     const double tail = std::fabs(left) >= std::fabs(right) ? (left - sum) - right : left - (sum + right);
-    return round_mixed_result(sum, tail);
+    return round_x87_result(sum, tail);
 }
 
 /* _ftol stores the low DWORD of a signed 64-bit truncation. The x87
@@ -412,16 +407,32 @@ static float mixed_product(int32_t integer, float real)
     if (integer == 0 && std::isinf(real)) return x87_indefinite();
     const double product = (double)integer * real;
     if (!std::isfinite(product)) return (float)product;
-    return round_mixed_result(product, std::fma(integer, real, -product));
+    return round_x87_result(product, std::fma(integer, real, -product));
 }
 
 /* The caller has already replaced a zero divisor with one. */
-static float mixed_quotient(double numerator, double divisor)
+static float x87_quotient(double numerator, double divisor)
 {
     const double quotient = numerator / divisor;
     if (!std::isfinite(quotient) || !std::isfinite(divisor)) return (float)quotient;
     const double remainder = std::fma(-quotient, divisor, numerator);
-    return round_mixed_result(quotient, divisor < 0.0 ? -remainder : remainder);
+    return round_x87_result(quotient, divisor < 0.0 ? -remainder : remainder);
+}
+
+// Original symbol: ?CKFloatDivideFloatFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
+// opfunc_ea=0x24B41C20
+// Divides two floats: result = p1 / p2 (with divide-by-zero handling)
+void CKFloatDivideFloatFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
+{
+    // Read divisor first (matches original binary order)
+    float v2;
+    ReadFloatSample(p2, &v2);
+    HandleDivByZeroFloat(&v2, context, res);
+
+    float v1;
+    ReadFloatSample(p1, &v1);
+    // FLD dividend; FDIV divisor. The saved memory operand retains its signaling bit.
+    StoreArithmeticWord(res->GetWriteDataPtr(), x87_quotient(v1, v2), v1, v2);
 }
 
 // Original symbol: ?CKFloatSqrtFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -528,7 +539,7 @@ void CKFloatDivideFloatInt(CKContext *context, CKParameterOut *res, CKParameterI
     int ival = ReadInt(p2);
     HandleDivByZeroInt(&ival, context, res);
     float fval = ReadFloat(p1);
-    *(float *)res->GetWriteDataPtr() = mixed_quotient(fval, ival);
+    *(float *)res->GetWriteDataPtr() = x87_quotient(fval, ival);
 }
 
 // Original symbol: ?CKFloatDivideIntFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -539,7 +550,7 @@ void CKFloatDivideIntFloat(CKContext *context, CKParameterOut *res, CKParameterI
     float fval = ReadFloat(p2);
     HandleDivByZeroFloat(&fval, context, res);
     int ival = ReadInt(p1);
-    *(float *)res->GetWriteDataPtr() = mixed_quotient(ival, fval);
+    *(float *)res->GetWriteDataPtr() = x87_quotient(ival, fval);
 }
 
 // Each numeric getter can run a producer and publish back into either input.
@@ -1373,7 +1384,7 @@ void CKIntDivideIntFloat(CKContext *context, CKParameterOut *res, CKParameterIn 
     float val2 = ReadFloat(p2);
     HandleDivByZeroFloat(&val2, context, res);
     int val1 = ReadInt(p1);
-    const uint32_t word = trunc_low_word(mixed_quotient(val1, val2));
+    const uint32_t word = trunc_low_word(x87_quotient(val1, val2));
     std::memcpy(res->GetWriteDataPtr(), &word, sizeof(word));
 }
 
@@ -1385,7 +1396,7 @@ void CKIntDivideFloatInt(CKContext *context, CKParameterOut *res, CKParameterIn 
     int val2 = ReadInt(p2);
     HandleDivByZeroInt(&val2, context, res);
     float val1 = ReadFloat(p1);
-    const uint32_t word = trunc_low_word(mixed_quotient(val1, val2));
+    const uint32_t word = trunc_low_word(x87_quotient(val1, val2));
     std::memcpy(res->GetWriteDataPtr(), &word, sizeof(word));
 }
 
