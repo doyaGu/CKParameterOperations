@@ -478,8 +478,16 @@ void CKFloatArcTanFloat(CKContext *context, CKParameterOut *res, CKParameterIn *
 // Returns arc cosine: result = acos(p1)
 void CKFloatArcCosFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    float val = ReadFloat(p1);
-    *(float *)res->GetWriteDataPtr() = acosf(val);
+    const uint32_t word = ReadLoadedFloatWord(p1);
+    const uint32_t magnitude = word & 0x7fffffffu;
+    if (magnitude > 0x3f800000u) {
+        const uint32_t result = magnitude > 0x7f800000u ? word : 0xffc00000u;
+        std::memcpy(res->GetWriteDataPtr(), &result, sizeof(result));
+    } else {
+        float value;
+        std::memcpy(&value, &word, sizeof(value));
+        *(float *)res->GetWriteDataPtr() = static_cast<float>(std::acos(static_cast<double>(value)));
+    }
 }
 
 // Original symbol: ?CKFloatArcSinFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
