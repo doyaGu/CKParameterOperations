@@ -1772,82 +1772,74 @@ void CKBoolSupEqualFloatFloat(CKContext *context, CKParameterOut *res, CKParamet
 
 // Original symbol: ?CKBoolInfFloatInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B46D50
-// Returns true if float(p1) > int(p2) (i.e., p2_as_float < p1)
 void CKBoolInfFloatInt(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    float val1 = ReadFloat(p1);
-    int val2 = ReadInt(p2);
-    *(int *)res->GetWriteDataPtr() = ((float)val2 < val1) ? 1 : 0;
+    const double left = ReadFloat(p1);
+    const double right = ReadInt(p2);
+    *(CKBOOL *)res->GetWriteDataPtr() = left < right;
 }
 
 // Original symbol: ?CKBoolSupFloatInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B46E20
-// Returns true if int(p2) < float(p1) (i.e., p2_as_float < p1)
 void CKBoolSupFloatInt(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    float val1 = ReadFloat(p1);
-    int val2 = ReadInt(p2);
-    *(int *)res->GetWriteDataPtr() = ((float)val2 < val1) ? 1 : 0;
+    const double left = ReadFloat(p1);
+    const double right = ReadInt(p2);
+    *(CKBOOL *)res->GetWriteDataPtr() = left > right;
 }
 
 // Original symbol: ?CKBoolInfEqualFloatInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B46EF0
-// Returns true if int(p2) >= float(p1) (i.e., p2_as_float >= p1)
 void CKBoolInfEqualFloatInt(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    float val1 = ReadFloat(p1);
-    int val2 = ReadInt(p2);
-    *(int *)res->GetWriteDataPtr() = ((float)val2 >= val1) ? 1 : 0;
+    const double left = ReadFloat(p1);
+    const double right = ReadInt(p2);
+    *(CKBOOL *)res->GetWriteDataPtr() = left <= right;
 }
 
 // Original symbol: ?CKBoolSupEqualFloatInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B46FC0
-// Returns true if int(p2) <= float(p1) (i.e., p2_as_float <= p1)
 void CKBoolSupEqualFloatInt(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    float val1 = ReadFloat(p1);
-    int val2 = ReadInt(p2);
-    *(int *)res->GetWriteDataPtr() = ((float)val2 <= val1) ? 1 : 0;
+    const double left = ReadFloat(p1);
+    const double right = ReadInt(p2);
+    *(CKBOOL *)res->GetWriteDataPtr() = left >= right;
 }
 
 // Original symbol: ?CKBoolInfIntFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B47090
-// Returns true if int(p1) < float(p2)
 void CKBoolInfIntFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    int val1 = ReadInt(p1);
-    float val2 = ReadFloat(p2);
-    *(int *)res->GetWriteDataPtr() = ((float)val1 < val2) ? 1 : 0;
+    const double left = ReadInt(p1);
+    const double right = ReadFloat(p2);
+    *(CKBOOL *)res->GetWriteDataPtr() = left < right;
 }
 
 // Original symbol: ?CKBoolSupIntFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B47150
-// Returns true if int(p1) > float(p2)
 void CKBoolSupIntFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    int val1 = ReadInt(p1);
-    float val2 = ReadFloat(p2);
-    *(int *)res->GetWriteDataPtr() = ((float)val1 > val2) ? 1 : 0;
+    const double left = ReadInt(p1);
+    const double right = ReadFloat(p2);
+    *(CKBOOL *)res->GetWriteDataPtr() = left > right;
 }
 
 // Original symbol: ?CKBoolInfEqualIntFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B47210
-// Returns true if int(p1) <= float(p2)
 void CKBoolInfEqualIntFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    int val1 = ReadInt(p1);
-    float val2 = ReadFloat(p2);
-    *(int *)res->GetWriteDataPtr() = ((float)val1 <= val2) ? 1 : 0;
+    const double left = ReadInt(p1);
+    const double right = ReadFloat(p2);
+    *(CKBOOL *)res->GetWriteDataPtr() = left <= right;
 }
 
 // Original symbol: ?CKBoolSupEqualIntFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B472D0
-// Returns true if int(p1) >= float(p2)
 void CKBoolSupEqualIntFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    int val1 = ReadInt(p1);
-    float val2 = ReadFloat(p2);
-    *(int *)res->GetWriteDataPtr() = ((float)val1 >= val2) ? 1 : 0;
+    const double left = ReadInt(p1);
+    const double right = ReadFloat(p2);
+    *(CKBOOL *)res->GetWriteDataPtr() = left >= right;
 }
 
 // Original symbol: ?CKBoolInfIntInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
