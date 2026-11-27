@@ -1,9 +1,30 @@
 #include "CKAll.h"
+#include "../ParameterMath.h"
+#include <cmath>
 #include "ParameterOperationTypes.h"
 
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+
+#ifndef VX_HAS_PARAMETER_MATH
+static float fromWord(uint32_t w) {
+    float value;
+    std::memcpy(&value, &w, sizeof(value));
+    return value;
+}
+
+static uint32_t asWord(float value) {
+    uint32_t w;
+    std::memcpy(&w, &value, sizeof(w));
+    return w;
+}
+
+static bool sameNativeFloat(uint32_t actual, uint32_t expected) {
+    return actual == expected || (std::isnan(fromWord(actual)) && std::isnan(fromWord(expected)));
+}
+
+#endif
 
 static bool checkPerSecond(CKContext *ctx)
 {
@@ -39,9 +60,17 @@ static bool checkPerSecond(CKContext *ctx)
         uint32_t result[3] = {};
         if (op->GetOutParameter()->GetValue(result, FALSE) != CK_OK) return false;
         for (int i = 0; i < count; ++i) {
-            if (result[i] != s.expected) {
+#ifdef VX_HAS_PARAMETER_MATH
+            const uint32_t expected = s.expected;
+            const bool matches = result[i] == expected;
+#else
+            const float scale = delta * (s.type == CKPGUID_VECTOR ? 0.0001f : 0.001f);
+            const uint32_t expected = asWord(fromWord(s.rate) * scale);
+            const bool matches = sameNativeFloat(result[i], expected);
+#endif
+            if (!matches) {
                 std::fprintf(stderr, "Per Second[%d] delta=%08x rate=%08x expected=%08x got=%08x\n",
-                             i, s.ms, s.rate, s.expected, result[i]);
+                             i, s.ms, s.rate, expected, result[i]);
                 return false;
             }
         }
@@ -49,12 +78,44 @@ static bool checkPerSecond(CKContext *ctx)
     return true;
 }
 
+struct Signature {
+    CKGUID op, result, first, second;
+    uint32_t left, right, expected;
+};
+
+#ifndef VX_HAS_PARAMETER_MATH
+static uint32_t nativeExpected(const Signature &s) {
+    const float a = fromWord(s.left), b = fromWord(s.right);
+    if (s.second == CKPGUID_NONE) {
+        if (s.op == CKOGUID_TANGENT) return asWord(std::tan(a));
+        if (s.op == CKOGUID_COSINE) return asWord(std::cos(a));
+        if (s.op == CKOGUID_SINE) return asWord(std::sin(a));
+        if (s.op == CKOGUID_ARC_SINE) return asWord(std::asin(a));
+        if (s.op == CKOGUID_ARC_COSINE) return asWord(std::acos(a));
+        if (s.op == CKOGUID_SQUARE_ROOT) return asWord(std::sqrt(a));
+        if (s.op == CKOGUID_OPPOSITE) return asWord(-a);
+        if (s.op == CKOGUID_ABSOLUTE_VALUE) return asWord(std::fabs(a));
+        if (s.op == CKOGUID_DEGRE_TO_RADIAN) return asWord(a * 0x1.1df46ap-6f);
+        if (s.op == CKOGUID_RADIAN_TO_DEGRE) return asWord(a * 0x1.ca5dc0p+5f);
+        return s.expected;
+    }
+    if (s.op == CKOGUID_ARC_TANGENT_2) return asWord(std::atan2(a, b));
+    if (s.result == CKPGUID_INT && s.op == CKOGUID_ADDITION) return s.expected;
+    const double left = s.first == CKPGUID_INT ? static_cast<double>(static_cast<int32_t>(s.left)) : a;
+    const double right = s.second == CKPGUID_INT ? static_cast<double>(static_cast<int32_t>(s.right)) : b;
+    double value;
+    if (s.op == CKOGUID_ADDITION) value = left + right;
+    else if (s.op == CKOGUID_SUBTRACTION) value = left - right;
+    else if (s.op == CKOGUID_MULTIPLICATION) value = left * right;
+    else value = left / (right == 0 ? 1 : right);
+    const float stored = static_cast<float>(value);
+    if (s.result == CKPGUID_FLOAT) return asWord(stored);
+    return stored >= -0x1p63f && stored < 0x1p63f ? static_cast<uint32_t>(static_cast<int64_t>(stored)) : 0;
+}
+#endif
+
 static bool check(CKContext *ctx)
 {
-    struct Signature {
-        CKGUID op, result, first, second;
-        uint32_t left, right, expected;
-    };
     const Signature cases[] = {
         {CKOGUID_DIVISION, CKPGUID_FLOAT, CKPGUID_FLOAT, CKPGUID_FLOAT, 0x7f800000, 0x7f800000, 0xffc00000},
         {CKOGUID_DIVISION, CKPGUID_FLOAT, CKPGUID_FLOAT, CKPGUID_FLOAT, 0xff800000, 0x7f800000, 0xffc00000},
@@ -189,8 +250,20 @@ static bool check(CKContext *ctx)
         std::memcpy(out->GetWriteDataPtr(), &word, 4);
         if (op->DoOperation() != CK_OK) return false;
         std::memcpy(&word, out->GetReadDataPtr(FALSE), 4);
-        if (word != s.expected) {
-            std::fprintf(stderr, "%08x %08x expected %08x got %08x\n", s.left, s.right, s.expected, word);
+#ifdef VX_HAS_PARAMETER_MATH
+        // MPFR at 256 bits rounds directly to ...a1. The binary80 store
+        // rounds to the exact FLOAT midpoint and the subsequent store to ...a2.
+        const bool midpoint = s.op == CKOGUID_ARC_TANGENT_2 &&
+            ((s.left == 0x4abf7cc2 && s.right == 0xca9b987e) ||
+             (s.left == 0x805fbe61 && s.right == 0x804dcc3f));
+        const uint32_t expected = s.expected;
+        const bool matches = word == expected || (midpoint && word == expected + 1);
+#else
+        const uint32_t expected = nativeExpected(s);
+        const bool matches = s.result == CKPGUID_FLOAT ? sameNativeFloat(word, expected) : word == expected;
+#endif
+        if (!matches) {
+            std::fprintf(stderr, "%08x %08x expected %08x got %08x\n", s.left, s.right, expected, word);
             return false;
         }
     }
