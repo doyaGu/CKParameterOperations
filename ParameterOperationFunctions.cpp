@@ -618,14 +618,26 @@ void CKFloatSetInt(CKContext *context, CKParameterOut *res, CKParameterIn *p1, C
     *(float *)res->GetWriteDataPtr() = (float)ival;
 }
 
+// Each factor is a stored binary32 constant. The exact product fits in double.
+static void WriteAngleProduct(CKParameterOut *out, CKParameterIn *input, float factor)
+{
+    const uint32_t word = ReadLoadedFloatWord(input);
+    if ((word & 0x7fffffffu) >= 0x7f800000u) {
+        std::memcpy(out->GetWriteDataPtr(), &word, sizeof(word));
+        return;
+    }
+    float value;
+    std::memcpy(&value, &word, sizeof(value));
+    const float result = round_x87_result(static_cast<double>(value) * factor, 0.0);
+    std::memcpy(out->GetWriteDataPtr(), &result, sizeof(result));
+}
+
 // Original symbol: ?CKFloatDegreToRadianFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B42B30
 // Converts degrees to radians: result = p1 * (PI/180)
 void CKFloatDegreToRadianFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    float val = ReadFloat(p1);
-    // Original constant: 0.017453292 (approx PI/180)
-    *(float *)res->GetWriteDataPtr() = val * 0.017453292f;
+    WriteAngleProduct(res, p1, 0x1.1df46ap-6f);
 }
 
 // Original symbol: ?CKFloatRadianToDegreFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -633,9 +645,7 @@ void CKFloatDegreToRadianFloat(CKContext *context, CKParameterOut *res, CKParame
 // Converts radians to degrees: result = p1 * (180/PI)
 void CKFloatRadianToDegreFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    float val = ReadFloat(p1);
-    // Original constant: 57.295776 (approx 180/PI)
-    *(float *)res->GetWriteDataPtr() = val * 57.295776f;
+    WriteAngleProduct(res, p1, 0x1.ca5dc0p+5f);
 }
 
 // Original symbol: ?CKFloatInverseInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
