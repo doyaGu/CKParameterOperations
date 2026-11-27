@@ -5,6 +5,50 @@
 #include <cstdio>
 #include <cstring>
 
+static bool checkPerSecond(CKContext *ctx)
+{
+    struct Sample { CKGUID type; uint32_t ms, rate, expected; };
+    const Sample samples[] = {
+        {CKPGUID_FLOAT, 0x434bae6f, 0x3ffbaffe, 0x3ecd0e64},
+        {CKPGUID_FLOAT, 0x4218ed3f, 0x3fcad339, 0x3d782398},
+        {CKPGUID_FLOAT, 0x04b8bbe8, 0x3fc50205, 0x0048c9c2},
+        {CKPGUID_FLOAT, 0x4309a883, 0x01b73511, 0x0064e146},
+        {CKPGUID_FLOAT, 0x41a00000, 0x41400000, 0x3e75c290},
+        {CKPGUID_FLOAT, 0x7f800000, 0x00000000, 0xffc00000},
+        {CKPGUID_FLOAT, 0xff805678, 0x7f801234, 0xffc05678},
+        {CKPGUID_VECTOR, 0x401bd623, 0x3ffd00fd, 0x39fc5592},
+        {CKPGUID_VECTOR, 0x40e49e22, 0x3fda68f6, 0x3a9fc89d},
+        {CKPGUID_VECTOR, 0x04a237ca, 0x3f90260f, 0x0004ad3c},
+        {CKPGUID_VECTOR, 0x43e9fd2b, 0x0130266d, 0x00107ca4},
+        {CKPGUID_VECTOR, 0x41a00000, 0x41400000, 0x3cc49ba5},
+        {CKPGUID_VECTOR, 0x7f800000, 0x00000000, 0xffc00000},
+        {CKPGUID_VECTOR, 0xff805678, 0x7f801234, 0xffc05678},
+    };
+    for (const auto &s : samples) {
+        auto *op = ctx->CreateCKParameterOperation(nullptr, CKOGUID_PER_SECOND, s.type, s.type, CKPGUID_NONE);
+        auto *rate = ctx->CreateCKParameterLocal(nullptr, s.type);
+        if (!op || !rate || !op->GetOperationFunction() || op->GetInParameter1()->SetDirectSource(rate) != CK_OK)
+            return false;
+        const int count = s.type == CKPGUID_VECTOR ? 3 : 1;
+        const uint32_t rates[] = {s.rate, s.rate, s.rate};
+        if (rate->SetValue(rates, count * sizeof(uint32_t)) != CK_OK) return false;
+        float delta;
+        std::memcpy(&delta, &s.ms, sizeof(delta));
+        ctx->GetTimeManager()->SetLastDeltaTime(delta);
+        if (op->DoOperation() != CK_OK) return false;
+        uint32_t result[3] = {};
+        if (op->GetOutParameter()->GetValue(result, FALSE) != CK_OK) return false;
+        for (int i = 0; i < count; ++i) {
+            if (result[i] != s.expected) {
+                std::fprintf(stderr, "Per Second[%d] delta=%08x rate=%08x expected=%08x got=%08x\n",
+                             i, s.ms, s.rate, s.expected, result[i]);
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 static bool check(CKContext *ctx)
 {
     struct Signature {
@@ -168,7 +212,7 @@ int main()
     if (ok) {
         CKInitializeOperationTypes(ctx);
         CKInitializeOperationFunctions(ctx);
-        ok = check(ctx);
+        ok = check(ctx) && checkPerSecond(ctx);
     }
     if (ctx) CKCloseContext(ctx);
     CKShutdown();
