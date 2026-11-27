@@ -193,19 +193,6 @@ static void HandleDivByZeroInt(int *divisor, CKContext *context, CKParameter *re
     }
 }
 
-// Original symbol: ?CKFloatPerSecondFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
-// opfunc_ea=0x24B422F0
-// Multiplies input float by delta time (seconds)
-void CKFloatPerSecondFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
-{
-    // Get delta time in seconds (ms * 0.001)
-    CKTimeManager *tm = context->GetTimeManager();
-    float deltaTime = tm->GetLastDeltaTime() * 0.001f;
-
-    float val = ReadFloat(p1);
-    *(float *)res->GetWriteDataPtr() = val * deltaTime;
-}
-
 // An active getter can publish into either input. Capture its four bytes now,
 // including the original signaling bit for x87 memory operands.
 static void ReadFloatSample(CKParameterIn *pin, void *out)
@@ -385,6 +372,25 @@ static float round_x87_result(double value, double residual)
     if (std::fabs(value) < FLT_MIN)
         return (float)((double)(float)(value * 0x1p160) * 0x1p-160);
     return (float)value;
+}
+
+// Both binary32 operands multiply exactly in double before x87/store rounding.
+static float FloatProduct(float reg, float mem)
+{
+    float product = round_x87_result(static_cast<double>(reg) * mem, 0.0);
+    StoreArithmeticWord(&product, product, reg, mem);
+    return product;
+}
+
+// Original symbol: ?CKFloatPerSecondFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
+// opfunc_ea=0x24B422F0
+void CKFloatPerSecondFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
+{
+    const float seconds = FloatProduct(context->GetTimeManager()->GetLastDeltaTime(), 0.001f);
+    float value;
+    ReadFloatSample(p1, &value);
+    const float result = FloatProduct(value, seconds);
+    std::memcpy(res->GetWriteDataPtr(), &result, sizeof(result));
 }
 
 static float mixed_difference(double left, double right)
@@ -2329,16 +2335,16 @@ void CKVectorPerSecondVector(CKContext *context, CKParameterOut *res, CKParamete
 {
     CKTimeManager *tm = context->GetTimeManager();
     float deltaTime = tm->GetLastDeltaTime();
-    float scale = deltaTime * 0.0001f;  // Convert from ms to seconds (approximately)
+    const float scale = FloatProduct(deltaTime, 0.0001f);
 
     VxVector v(0.0f, 0.0f, 0.0f);
     CKParameter *src = GetSourceParameter(p1);
     if (src)
         src->GetValue(&v);
 
-    v.x *= scale;
-    v.y *= scale;
-    v.z *= scale;
+    v.x = FloatProduct(v.x, scale);
+    v.y = FloatProduct(v.y, scale);
+    v.z = FloatProduct(v.z, scale);
 
     float *out = (float *)res->GetWriteDataPtr();
     out[0] = v.x;
