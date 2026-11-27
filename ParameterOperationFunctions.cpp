@@ -1,6 +1,5 @@
-#include "X87Trigonometry.h"
+#include "ParameterMath.h"
 #include "CKAll.h"
-#include <cfloat>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -193,8 +192,7 @@ static void HandleDivByZeroInt(int *divisor, CKContext *context, CKParameter *re
     }
 }
 
-// An active getter can publish into either input. Capture its four bytes now,
-// including the original signaling bit for x87 memory operands.
+// An active getter can publish into either input. Capture its four bytes now.
 static void ReadFloatSample(CKParameterIn *pin, void *out)
 {
     const float *ptr = ReadFloatPtr(pin);
@@ -202,22 +200,13 @@ static void ReadFloatSample(CKParameterIn *pin, void *out)
     else std::memset(out, 0, sizeof(float));
 }
 
-// FLD quiets signaling NaNs before FCHS and FABS operate on the sign.
-static uint32_t ReadLoadedFloatWord(CKParameterIn *pin)
-{
-    uint32_t word;
-    ReadFloatSample(pin, &word);
-    if ((word & 0x7fffffffu) > 0x7f800000u) word |= 0x00400000u;
-    return word;
-}
-
 // Original symbol: ?CKFloatOppositeFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B41920
 // Negates the input float: result = -p1
 void CKFloatOppositeFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    const uint32_t word = ReadLoadedFloatWord(p1) ^ 0x80000000u;
-    std::memcpy(res->GetWriteDataPtr(), &word, sizeof(word));
+    const float value = VxParameterMath::Negate(ReadFloat(p1));
+    *(float *)res->GetWriteDataPtr() = value;
 }
 
 // Original symbol: ?CKFloatAbsoluteFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -225,34 +214,8 @@ void CKFloatOppositeFloat(CKContext *context, CKParameterOut *res, CKParameterIn
 // Returns absolute value of input float: result = |p1|
 void CKFloatAbsoluteFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    const uint32_t word = ReadLoadedFloatWord(p1) & 0x7fffffffu;
-    std::memcpy(res->GetWriteDataPtr(), &word, sizeof(word));
-}
-
-/* A NaN produced by invalid arithmetic has the x87 indefinite encoding.
- * When either input is NaN, FLD has already quieted the register operand.
- * The larger significand wins; for equal significands x87 prefers positive. */
-static void StoreArithmeticWord(void *out, float result, const float &reg, const float &mem)
-{
-    uint32_t word;
-    std::memcpy(&word, &result, sizeof(word));
-    if ((word & 0x7fffffffu) > 0x7f800000u) {
-        uint32_t r, m;
-        std::memcpy(&r, &reg, sizeof(r));
-        std::memcpy(&m, &mem, sizeof(m));
-        uint32_t rm = r & 0x7fffffffu;
-        const uint32_t mm = m & 0x7fffffffu;
-        if (rm > 0x7f800000u) {
-            r |= 0x00400000u;
-            rm = r & 0x7fffffffu;
-            word = mm > rm || (mm == rm && m < r) ? m : r;
-        } else if (mm > 0x7f800000u) {
-            word = m | 0x00400000u;
-        } else {
-            word = 0xffc00000u;
-        }
-    }
-    std::memcpy(out, &word, sizeof(word));
+    const float value = VxParameterMath::Absolute(ReadFloat(p1));
+    *(float *)res->GetWriteDataPtr() = value;
 }
 
 // Original symbol: ?CKFloatAddFloatFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -262,7 +225,7 @@ void CKFloatAddFloatFloat(CKContext *context, CKParameterOut *res, CKParameterIn
 {
     float v1 = ReadFloat(p1);
     float v2 = ReadFloat(p2);
-    StoreArithmeticWord(res->GetWriteDataPtr(), v1 + v2, v2, v1);
+    *(float *)res->GetWriteDataPtr() = VxParameterMath::Add(v1, v2);
 }
 
 // Original symbol: ?CKFloatSubtractFloatFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -272,7 +235,7 @@ void CKFloatSubtractFloatFloat(CKContext *context, CKParameterOut *res, CKParame
 {
     float v1 = ReadFloat(p1);
     float v2 = ReadFloat(p2);
-    StoreArithmeticWord(res->GetWriteDataPtr(), v1 - v2, v1, v2);
+    *(float *)res->GetWriteDataPtr() = VxParameterMath::Subtract(v1, v2);
 }
 
 // Original symbol: ?CKFloatMultiplyFloatFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -282,7 +245,7 @@ void CKFloatMultiplyFloatFloat(CKContext *context, CKParameterOut *res, CKParame
 {
     float v1 = ReadFloat(p1);
     float v2 = ReadFloat(p2);
-    StoreArithmeticWord(res->GetWriteDataPtr(), v1 * v2, v2, v1);
+    *(float *)res->GetWriteDataPtr() = VxParameterMath::Multiply(v1, v2);
 }
 
 // The two active getters return storage addresses. The left getter may publish
@@ -343,62 +306,24 @@ void CKFloatInverseFloat(CKContext *context, CKParameterOut *res, CKParameterIn 
     *(float *)res->GetWriteDataPtr() = 1.0f / val;
 }
 
-static void WriteTrigResult(CKParameterOut *out, CKParameterIn *input, x87_trig_op op)
-{
-    uint32_t word;
-    ReadFloatSample(input, &word);
-    word = x87_trig_word(op, word);
-    std::memcpy(out->GetWriteDataPtr(), &word, sizeof(word));
-}
-
 // Original symbol: ?CKFloatSinusFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B41FA0
 // Returns sine of input (in radians): result = sin(p1)
 void CKFloatSinusFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    WriteTrigResult(res, p1, X87_SINE);
-}
-
-/* CK2 rounds x87 arithmetic to 24 significant bits with a wide exponent.
- * The residual sign breaks a false midpoint introduced by binary64.
- * For subnormals, perform the register rounding before the binary32 store.
- * Scaling by 2^160 normalizes even the smallest binary32/binary32 quotient. */
-static float round_x87_result(double value, double residual)
-{
-    uint64_t bits;
-    std::memcpy(&bits, &value, sizeof(bits));
-    if (residual != 0.0 && !(bits & 1u))
-        value = std::nextafter(value, residual > 0.0 ? INFINITY : -INFINITY);
-    if (std::fabs(value) < FLT_MIN)
-        return (float)((double)(float)(value * 0x1p160) * 0x1p-160);
-    return (float)value;
-}
-
-// Both binary32 operands multiply exactly in double before x87/store rounding.
-static float FloatProduct(float reg, float mem)
-{
-    float product = round_x87_result(static_cast<double>(reg) * mem, 0.0);
-    StoreArithmeticWord(&product, product, reg, mem);
-    return product;
+    const float value = VxParameterMath::Sin(ReadFloat(p1));
+    *(float *)res->GetWriteDataPtr() = value;
 }
 
 // Original symbol: ?CKFloatPerSecondFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
 // opfunc_ea=0x24B422F0
 void CKFloatPerSecondFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    const float seconds = FloatProduct(context->GetTimeManager()->GetLastDeltaTime(), 0.001f);
+    const float seconds = VxParameterMath::Scale(context->GetTimeManager()->GetLastDeltaTime(), 0.001f);
     float value;
     ReadFloatSample(p1, &value);
-    const float result = FloatProduct(value, seconds);
+    const float result = VxParameterMath::Scale(value, seconds);
     std::memcpy(res->GetWriteDataPtr(), &result, sizeof(result));
-}
-
-static float mixed_difference(double left, double right)
-{
-    const double sum = left - right;
-    if (!std::isfinite(sum)) return (float)sum;
-    const double tail = std::fabs(left) >= std::fabs(right) ? (left - sum) - right : left - (sum + right);
-    return round_x87_result(sum, tail);
 }
 
 /* _ftol stores the low DWORD of a signed 64-bit truncation. The x87
@@ -406,31 +331,6 @@ static float mixed_difference(double left, double right)
 static uint32_t trunc_low_word(float value)
 {
     return value >= -0x1p63 && value < 0x1p63 ? (uint32_t)(int64_t)value : 0;
-}
-
-static float x87_indefinite(void)
-{
-    const uint32_t bits = 0xffc00000u;
-    float value;
-    std::memcpy(&value, &bits, sizeof(value));
-    return value;
-}
-
-static float mixed_product(int32_t integer, float real)
-{
-    if (integer == 0 && std::isinf(real)) return x87_indefinite();
-    const double product = (double)integer * real;
-    if (!std::isfinite(product)) return (float)product;
-    return round_x87_result(product, std::fma(integer, real, -product));
-}
-
-/* The caller has already replaced a zero divisor with one. */
-static float x87_quotient(double numerator, double divisor)
-{
-    const double quotient = numerator / divisor;
-    if (!std::isfinite(quotient) || !std::isfinite(divisor)) return (float)quotient;
-    const double remainder = std::fma(-quotient, divisor, numerator);
-    return round_x87_result(quotient, divisor < 0.0 ? -remainder : remainder);
 }
 
 // Original symbol: ?CKFloatDivideFloatFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -445,8 +345,7 @@ void CKFloatDivideFloatFloat(CKContext *context, CKParameterOut *res, CKParamete
 
     float v1;
     ReadFloatSample(p1, &v1);
-    // FLD dividend; FDIV divisor. The saved memory operand retains its signaling bit.
-    StoreArithmeticWord(res->GetWriteDataPtr(), x87_quotient(v1, v2), v1, v2);
+    *(float *)res->GetWriteDataPtr() = VxParameterMath::Divide(v1, v2);
 }
 
 // Original symbol: ?CKFloatSqrtFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -455,7 +354,7 @@ void CKFloatDivideFloatFloat(CKContext *context, CKParameterOut *res, CKParamete
 void CKFloatSqrtFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
     float val = ReadFloat(p1);
-    *(float *)res->GetWriteDataPtr() = val < 0.0f ? x87_indefinite() : sqrtf(val);
+    *(float *)res->GetWriteDataPtr() = VxParameterMath::Sqrt(val);
 }
 
 // Original symbol: ?CKFloatCosinusFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -463,7 +362,8 @@ void CKFloatSqrtFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1
 // Returns cosine of input (in radians): result = cos(p1)
 void CKFloatCosinusFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    WriteTrigResult(res, p1, X87_COSINE);
+    const float value = VxParameterMath::Cos(ReadFloat(p1));
+    *(float *)res->GetWriteDataPtr() = value;
 }
 
 // Original symbol: ?CKFloatTanFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -471,7 +371,8 @@ void CKFloatCosinusFloat(CKContext *context, CKParameterOut *res, CKParameterIn 
 // Returns tangent of input (in radians): result = tan(p1)
 void CKFloatTanFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    WriteTrigResult(res, p1, X87_TANGENT);
+    const float value = VxParameterMath::Tan(ReadFloat(p1));
+    *(float *)res->GetWriteDataPtr() = value;
 }
 
 // Original symbol: ?CKFloatArcTanFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -479,11 +380,9 @@ void CKFloatTanFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1,
 // Returns atan2(p1, p2): two-argument arctangent
 void CKFloatArcTanFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    uint32_t x, y;
-    ReadFloatSample(p2, &x);
-    ReadFloatSample(p1, &y);
-    const uint32_t result = x87_atan2_word(y, x);
-    std::memcpy(res->GetWriteDataPtr(), &result, sizeof(result));
+    const float x = ReadFloat(p2);
+    const float y = ReadFloat(p1);
+    *(float *)res->GetWriteDataPtr() = VxParameterMath::Atan2(y, x);
 }
 
 // Original symbol: ?CKFloatArcCosFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -491,16 +390,8 @@ void CKFloatArcTanFloat(CKContext *context, CKParameterOut *res, CKParameterIn *
 // Returns arc cosine: result = acos(p1)
 void CKFloatArcCosFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
-    const uint32_t word = ReadLoadedFloatWord(p1);
-    const uint32_t magnitude = word & 0x7fffffffu;
-    if (magnitude > 0x3f800000u) {
-        const uint32_t result = magnitude > 0x7f800000u ? word : 0xffc00000u;
-        std::memcpy(res->GetWriteDataPtr(), &result, sizeof(result));
-    } else {
-        float value;
-        std::memcpy(&value, &word, sizeof(value));
-        *(float *)res->GetWriteDataPtr() = static_cast<float>(std::acos(static_cast<double>(value)));
-    }
+    const float value = VxParameterMath::Acos(ReadFloat(p1));
+    *(float *)res->GetWriteDataPtr() = value;
 }
 
 // Original symbol: ?CKFloatArcSinFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -509,7 +400,7 @@ void CKFloatArcCosFloat(CKContext *context, CKParameterOut *res, CKParameterIn *
 void CKFloatArcSinFloat(CKContext *context, CKParameterOut *res, CKParameterIn *p1, CKParameterIn *p2)
 {
     float val = ReadFloat(p1);
-    *(float *)res->GetWriteDataPtr() = fabsf(val) > 1.0f ? x87_indefinite() : static_cast<float>(asin(static_cast<double>(val)));
+    *(float *)res->GetWriteDataPtr() = VxParameterMath::Asin(val);
 }
 
 // Original symbol: ?CKFloatAddFloatInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -519,7 +410,7 @@ void CKFloatAddFloatInt(CKContext *context, CKParameterOut *res, CKParameterIn *
 {
     float val = ReadFloat(p1);
     int ival = ReadInt(p2);
-    *(float *)res->GetWriteDataPtr() = mixed_difference(val, -(double)ival);
+    *(float *)res->GetWriteDataPtr() = VxParameterMath::MixedDifference(val, -(double)ival);
 }
 
 // Original symbol: ?CKFloatSubtractFloatInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -529,7 +420,7 @@ void CKFloatSubtractFloatInt(CKContext *context, CKParameterOut *res, CKParamete
 {
     float val = ReadFloat(p1);
     int ival = ReadInt(p2);
-    *(float *)res->GetWriteDataPtr() = mixed_difference(val, ival);
+    *(float *)res->GetWriteDataPtr() = VxParameterMath::MixedDifference(val, ival);
 }
 
 // Original symbol: ?CKFloatSubtractIntFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -539,7 +430,7 @@ void CKFloatSubtractIntFloat(CKContext *context, CKParameterOut *res, CKParamete
 {
     int ival = ReadInt(p1);
     float fval = ReadFloat(p2);
-    *(float *)res->GetWriteDataPtr() = mixed_difference(ival, fval);
+    *(float *)res->GetWriteDataPtr() = VxParameterMath::MixedDifference(ival, fval);
 }
 
 // Original symbol: ?CKFloatMultiplyFloatInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -549,7 +440,7 @@ void CKFloatMultiplyFloatInt(CKContext *context, CKParameterOut *res, CKParamete
 {
     float val = ReadFloat(p1);
     int ival = ReadInt(p2);
-    *(float *)res->GetWriteDataPtr() = mixed_product(ival, val);
+    *(float *)res->GetWriteDataPtr() = VxParameterMath::MixedProduct(ival, val);
 }
 
 // Original symbol: ?CKFloatDivideFloatInt@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -560,7 +451,7 @@ void CKFloatDivideFloatInt(CKContext *context, CKParameterOut *res, CKParameterI
     int ival = ReadInt(p2);
     HandleDivByZeroInt(&ival, context, res);
     float fval = ReadFloat(p1);
-    *(float *)res->GetWriteDataPtr() = x87_quotient(fval, ival);
+    *(float *)res->GetWriteDataPtr() = VxParameterMath::MixedQuotient(fval, ival);
 }
 
 // Original symbol: ?CKFloatDivideIntFloat@@YAXPAVCKContext@@PAVCKParameterOut@@PAVCKParameterIn@@2@Z
@@ -571,7 +462,7 @@ void CKFloatDivideIntFloat(CKContext *context, CKParameterOut *res, CKParameterI
     float fval = ReadFloat(p2);
     HandleDivByZeroFloat(&fval, context, res);
     int ival = ReadInt(p1);
-    *(float *)res->GetWriteDataPtr() = x87_quotient(ival, fval);
+    *(float *)res->GetWriteDataPtr() = VxParameterMath::MixedQuotient(ival, fval);
 }
 
 // Each numeric getter can run a producer and publish back into either input.
@@ -627,14 +518,7 @@ void CKFloatSetInt(CKContext *context, CKParameterOut *res, CKParameterIn *p1, C
 // Each factor is a stored binary32 constant. The exact product fits in double.
 static void WriteAngleProduct(CKParameterOut *out, CKParameterIn *input, float factor)
 {
-    const uint32_t word = ReadLoadedFloatWord(input);
-    if ((word & 0x7fffffffu) >= 0x7f800000u) {
-        std::memcpy(out->GetWriteDataPtr(), &word, sizeof(word));
-        return;
-    }
-    float value;
-    std::memcpy(&value, &word, sizeof(value));
-    const float result = round_x87_result(static_cast<double>(value) * factor, 0.0);
+    const float result = VxParameterMath::Scale(ReadFloat(input), factor);
     std::memcpy(out->GetWriteDataPtr(), &result, sizeof(result));
 }
 
@@ -1381,7 +1265,7 @@ void CKIntSubtractIntFloat(CKContext *context, CKParameterOut *res, CKParameterI
 {
     int val1 = ReadInt(p1);
     float val2 = ReadFloat(p2);
-    const uint32_t word = trunc_low_word(mixed_difference(val1, val2));
+    const uint32_t word = trunc_low_word(VxParameterMath::MixedDifference(val1, val2));
     std::memcpy(res->GetWriteDataPtr(), &word, sizeof(word));
 }
 
@@ -1392,7 +1276,7 @@ void CKIntSubtractFloatInt(CKContext *context, CKParameterOut *res, CKParameterI
 {
     float val1 = ReadFloat(p1);
     int val2 = ReadInt(p2);
-    const uint32_t word = trunc_low_word(mixed_difference(val1, val2));
+    const uint32_t word = trunc_low_word(VxParameterMath::MixedDifference(val1, val2));
     std::memcpy(res->GetWriteDataPtr(), &word, sizeof(word));
 }
 
@@ -1403,7 +1287,7 @@ void CKIntMultiplyIntFloat(CKContext *context, CKParameterOut *res, CKParameterI
 {
     int val1 = ReadInt(p1);
     float val2 = ReadFloat(p2);
-    const uint32_t word = trunc_low_word(mixed_product(val1, val2));
+    const uint32_t word = trunc_low_word(VxParameterMath::MixedProduct(val1, val2));
     std::memcpy(res->GetWriteDataPtr(), &word, sizeof(word));
 }
 
@@ -1415,7 +1299,7 @@ void CKIntDivideIntFloat(CKContext *context, CKParameterOut *res, CKParameterIn 
     float val2 = ReadFloat(p2);
     HandleDivByZeroFloat(&val2, context, res);
     int val1 = ReadInt(p1);
-    const uint32_t word = trunc_low_word(x87_quotient(val1, val2));
+    const uint32_t word = trunc_low_word(VxParameterMath::MixedQuotient(val1, val2));
     std::memcpy(res->GetWriteDataPtr(), &word, sizeof(word));
 }
 
@@ -1427,7 +1311,7 @@ void CKIntDivideFloatInt(CKContext *context, CKParameterOut *res, CKParameterIn 
     int val2 = ReadInt(p2);
     HandleDivByZeroInt(&val2, context, res);
     float val1 = ReadFloat(p1);
-    const uint32_t word = trunc_low_word(x87_quotient(val1, val2));
+    const uint32_t word = trunc_low_word(VxParameterMath::MixedQuotient(val1, val2));
     std::memcpy(res->GetWriteDataPtr(), &word, sizeof(word));
 }
 
@@ -2335,16 +2219,16 @@ void CKVectorPerSecondVector(CKContext *context, CKParameterOut *res, CKParamete
 {
     CKTimeManager *tm = context->GetTimeManager();
     float deltaTime = tm->GetLastDeltaTime();
-    const float scale = FloatProduct(deltaTime, 0.0001f);
+    const float scale = VxParameterMath::Scale(deltaTime, 0.0001f);
 
     VxVector v(0.0f, 0.0f, 0.0f);
     CKParameter *src = GetSourceParameter(p1);
     if (src)
         src->GetValue(&v);
 
-    v.x = FloatProduct(v.x, scale);
-    v.y = FloatProduct(v.y, scale);
-    v.z = FloatProduct(v.z, scale);
+    v.x = VxParameterMath::Scale(v.x, scale);
+    v.y = VxParameterMath::Scale(v.y, scale);
+    v.z = VxParameterMath::Scale(v.z, scale);
 
     float *out = (float *)res->GetWriteDataPtr();
     out[0] = v.x;
